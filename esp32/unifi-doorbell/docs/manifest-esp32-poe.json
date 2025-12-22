@@ -9,7 +9,7 @@
         { "path": "firmware/esp32-poe/partitions.bin", "offset": 32768 },
         { "path": "firmware/esp32-poe/boot_app0.bin", "offset": 57344 },
         { "path": "firmware/esp32-poe/firmware.bin", "offset": 65536 },
-        { "path": "firmware/esp32-poe/littlefs.bin", "offset": 3145728 }
+        { "path": "firmware/esp32-poe/littlefs.bin", "offset": 3473408 }
       ]
     }
   ]

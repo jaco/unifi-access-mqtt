@@ -9,7 +9,7 @@
         { "path": "firmware/esp32-s3-wroom/partitions.bin", "offset": 32768 },
         { "path": "firmware/esp32-s3-wroom/boot_app0.bin", "offset": 57344 },
         { "path": "firmware/esp32-s3-wroom/firmware.bin", "offset": 65536 },
-        { "path": "firmware/esp32-s3-wroom/littlefs.bin", "offset": 3145728 }
+        { "path": "firmware/esp32-s3-wroom/littlefs.bin", "offset": 3473408 }
       ]
     }
   ]
