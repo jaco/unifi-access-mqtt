@@ -18,8 +18,10 @@
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/base64.h>
 
-// Firmware version
-#define FIRMWARE_VERSION "0.1.0"
+// Firmware version - defined by build script, fallback for local builds
+#ifndef FIRMWARE_VERSION
+#define FIRMWARE_VERSION "dev"
+#endif
 
 // Web server on port 80
 static AsyncWebServer server(80);
