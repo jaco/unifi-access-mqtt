@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UniFi Doorbell Fixes</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --bg-card: #1c2128;
+            --border-color: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-blue: #2f81f7;
+            --accent-blue-hover: #388bfd;
+            --accent-green: #3fb950;
+            --accent-red: #f85149;
+            --accent-orange: #d29922;
+            --radius: 8px;
+            --shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* Login Screen */
+        .login-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .login-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: var(--shadow);
+        }
+
+        .login-logo {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .login-logo svg {
+            width: 64px;
+            height: 64px;
+            fill: var(--accent-blue);
+        }
+
+        .login-logo h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-top: 16px;
+        }
+
+        /* Main App */
+        .app-container {
+            display: none;
+        }
+
+        .app-container.active {
+            display: block;
+        }
+
+        /* Header */
+        .app-header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .app-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .app-header h1 svg {
+            width: 32px;
+            height: 32px;
+            fill: var(--accent-blue);
+        }
+
+        .app-title-link {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .app-title-link:hover h1 {
+            opacity: 0.8;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .connection-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 20px;
+            font-size: 13px;
+        }
+
+        .connection-badge .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .connection-badge .dot.disconnected {
+            background: var(--accent-red);
+        }
+
+        /* Navigation */
+        .app-nav {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 24px;
+            display: flex;
+            gap: 4px;
+        }
+
+        .nav-tab {
+            padding: 14px 20px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .nav-tab:hover {
+            color: var(--text-primary);
+        }
+
+        .nav-tab.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--accent-blue);
+        }
+
+        /* Content */
+        .app-content {
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            margin-bottom: 24px;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .card-header p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        /* Status Grid */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+        }
+
+        .status-item {
+            background: var(--bg-tertiary);
+            padding: 16px;
+            border-radius: var(--radius);
+        }
+
+        .status-item .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .status-item .value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .status-item .value.connected { color: var(--accent-green); }
+        .status-item .value.disconnected { color: var(--accent-red); }
+        .status-item .value.ringing {
+            color: var(--accent-orange);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .form-hint {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        input[type="email"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            color: var(--text-primary);
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        input::placeholder, textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 12px;
+        }
+
+        select {
+            cursor: pointer;
+        }
+
+        /* Checkbox / Toggle */
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toggle {
+            position: relative;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            transition: 0.3s;
+        }
+
+        .toggle-slider:before {
+            content: "";
+            position: absolute;
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+
+        .toggle input:checked + .toggle-slider {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .toggle input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+            background: white;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-blue-hover);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        .btn-danger {
+            background: transparent;
+            color: var(--accent-red);
+            border: 1px solid var(--accent-red);
+        }
+
+        .btn-danger:hover {
+            background: var(--accent-red);
+            color: white;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Setup Wizard */
+        .wizard {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .wizard-progress {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            position: relative;
+        }
+
+        .wizard-progress::before {
+            content: "";
+            position: absolute;
+            top: 16px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--border-color);
+        }
+
+        .wizard-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .wizard-step .step-number {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--bg-tertiary);
+            border: 2px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .wizard-step.active .step-number {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
+
+        .wizard-step.complete .step-number {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+            color: white;
+        }
+
+        .wizard-step .step-label {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .wizard-step.active .step-label,
+        .wizard-step.complete .step-label {
+            color: var(--text-primary);
+        }
+
+        .wizard-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 32px;
+        }
+
+        .wizard-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* Device Selector */
+        .device-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .device-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .device-item:hover {
+            border-color: var(--accent-blue);
+        }
+
+        .device-item.selected {
+            border-color: var(--accent-blue);
+            background: rgba(47, 129, 247, 0.1);
+        }
+
+        .device-item input[type="checkbox"],
+        .device-item input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent-blue);
+        }
+
+        .device-info {
+            flex: 1;
+        }
+
+        .device-info .name {
+            font-weight: 500;
+        }
+
+        .device-info .meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Alert */
+        .alert {
+            padding: 16px;
+            border-radius: var(--radius);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .alert-info {
+            background: rgba(47, 129, 247, 0.1);
+            border: 1px solid var(--accent-blue);
+        }
+
+        .alert-success {
+            background: rgba(63, 185, 80, 0.1);
+            border: 1px solid var(--accent-green);
+        }
+
+        .alert-error {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid var(--accent-red);
+        }
+
+        .alert-warning {
+            background: rgba(210, 153, 34, 0.1);
+            border: 1px solid var(--accent-orange);
+        }
+
+        /* Doorbell Ring Alert */
+        .ring-alert {
+            display: none;
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--accent-orange);
+            color: var(--bg-primary);
+            padding: 16px 24px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            z-index: 1000;
+            animation: slideDown 0.3s ease;
+        }
+
+        .ring-alert.active {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        @keyframes slideDown {
+            from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-blue);
+            transition: width 0.3s;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .app-header {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+
+            .app-nav {
+                overflow-x: auto;
+            }
+
+            .wizard-progress {
+                flex-wrap: wrap;
+                gap: 16px;
+            }
+
+            .wizard-progress::before {
+                display: none;
+            }
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <!-- AP Mode Setup Screen -->
+    <div id="ap-setup-screen" class="login-container hidden">
+        <div class="login-card">
+            <div class="login-logo">
+                <svg viewBox="0 0 24 24"><path d="M12 3L4 9v12h16V9l-8-6zm0 2.5L18 10v9H6v-9l6-4.5zM12 13a2 2 0 100 4 2 2 0 000-4z"/></svg>
+                <h1>WiFi Setup</h1>
+            </div>
+            <p style="text-align:center; margin-bottom:24px; color:var(--text-secondary);">
+                Connect your UniFi Doorbell to your WiFi network
+            </p>
+            <form id="ap-setup-form" method="POST" action="javascript:void(0)" onsubmit="return false">
+                <div class="form-group">
+                    <label for="ap-wifi-ssid">WiFi Network Name (SSID)</label>
+                    <input type="text" id="ap-wifi-ssid" placeholder="Your WiFi network" required>
+                </div>
+                <div class="form-group">
+                    <label for="ap-wifi-password">WiFi Password</label>
+                    <input type="password" id="ap-wifi-password" placeholder="WiFi password">
+                </div>
+                <div id="ap-setup-error" class="alert alert-error hidden"></div>
+                <div id="ap-setup-success" class="alert alert-success hidden">
+                    WiFi configured! The device will now reboot and connect to your network.
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%">Connect</button>
+            </form>
+            <p style="text-align:center; margin-top:24px; color:var(--text-muted); font-size:13px;">
+                After connecting, access the device at<br><strong>http://doorbell.local</strong>
+            </p>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container hidden">
+        <div class="login-card">
+            <div class="login-logo">
+                <svg viewBox="0 0 24 24"><path d="M12 3L4 9v12h16V9l-8-6zm0 2.5L18 10v9H6v-9l6-4.5zM12 13a2 2 0 100 4 2 2 0 000-4z"/></svg>
+                <h1>UniFi Doorbell</h1>
+            </div>
+            <form id="login-form" method="POST" action="javascript:void(0)" onsubmit="return false">
+                <div class="form-group">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" name="username" placeholder="admin" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" name="password" placeholder="Password" required>
+                </div>
+                <div id="login-error" class="alert alert-error hidden"></div>
+                <button type="submit" class="btn btn-primary" style="width:100%">Sign In</button>
+            </form>
+            <p style="text-align:center; margin-top:24px; color:var(--text-muted); font-size:13px;">
+                Default: admin / admin
+            </p>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <a href="/" onclick="location.href='/'; location.reload(); return false;" class="app-title-link">
+                <h1>
+                    <svg viewBox="0 0 24 24"><path d="M12 3L4 9v12h16V9l-8-6zm0 2.5L18 10v9H6v-9l6-4.5zM12 13a2 2 0 100 4 2 2 0 000-4z"/></svg>
+                    UniFi Doorbell Fixes
+                </h1>
+            </a>
+            <div class="header-actions">
+                <div class="connection-badge">
+                    <span id="ws-status-dot" class="dot"></span>
+                    <span id="ws-status-text">Connected</span>
+                </div>
+                <button class="btn btn-secondary" onclick="logout()">Logout</button>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="app-nav">
+            <a class="nav-tab active" data-tab="status">Status</a>
+            <a class="nav-tab" data-tab="setup">Setup</a>
+            <a class="nav-tab" data-tab="settings">Settings</a>
+            <a class="nav-tab" data-tab="system">System</a>
+        </nav>
+
+        <!-- Ring Alert -->
+        <div id="ring-alert" class="ring-alert">
+            <strong>Doorbell is ringing!</strong>
+            <button class="btn btn-secondary" onclick="dismissCall()">Dismiss</button>
+        </div>
+
+        <!-- Content -->
+        <main class="app-content">
+            <!-- Status Tab -->
+            <section id="tab-status" class="tab-panel active">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>System Status</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="status-grid">
+                            <div class="status-item">
+                                <div class="label">Doorbell</div>
+                                <div id="status-doorbell" class="value">Idle</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="label">Network</div>
+                                <div id="status-network" class="value">--</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="label">UniFi Access</div>
+                                <div id="status-unifi" class="value">--</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="label">MQTT</div>
+                                <div id="status-mqtt" class="value">--</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="label">Free Memory</div>
+                                <div id="status-heap" class="value">--</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="label">Uptime</div>
+                                <div id="status-uptime" class="value">--</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Quick Actions</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="btn-group">
+                            <button class="btn btn-primary" onclick="triggerRing()">Test Ring</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Setup Tab (Wizard) -->
+            <section id="tab-setup" class="tab-panel">
+                <div class="wizard">
+                    <div class="wizard-progress">
+                        <div class="wizard-step active" data-step="1">
+                            <div class="step-number">1</div>
+                            <div class="step-label">UniFi Access</div>
+                        </div>
+                        <div class="wizard-step" data-step="2">
+                            <div class="step-number">2</div>
+                            <div class="step-label">Certificate</div>
+                        </div>
+                        <div class="wizard-step" data-step="3">
+                            <div class="step-number">3</div>
+                            <div class="step-label">Doorbell</div>
+                        </div>
+                        <div class="wizard-step" data-step="4">
+                            <div class="step-number">4</div>
+                            <div class="step-label">Complete</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 1: UniFi Access -->
+                    <div class="wizard-content" id="wizard-step-1">
+                        <h3 style="margin-bottom:8px">Connect to UniFi Access</h3>
+                        <p class="form-hint" style="margin-bottom:24px">
+                            Create a local user in UniFi Access (Settings > Admins > Add Admin) with at least "View Only" permissions. This user is required for API access.
+                        </p>
+
+                        <div class="form-group">
+                            <label for="unifi-host">UniFi Access Host</label>
+                            <input type="text" id="unifi-host" placeholder="192.168.1.1 or unifi.local">
+                            <p class="form-hint">IP address or hostname of your UniFi Access controller</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="unifi-username">Username</label>
+                            <input type="text" id="unifi-username" placeholder="doorbell-api">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="unifi-password">Password</label>
+                            <input type="password" id="unifi-password" placeholder="Password">
+                        </div>
+
+                        <div class="wizard-actions">
+                            <div></div>
+                            <button class="btn btn-primary" onclick="wizardNext(1)">Next</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Certificate -->
+                    <div class="wizard-content hidden" id="wizard-step-2">
+                        <h3 style="margin-bottom:8px">SSL Certificate</h3>
+                        <p class="form-hint" style="margin-bottom:24px">
+                            UniFi Access uses a self-signed certificate. We need to trust it for secure communication.
+                        </p>
+
+                        <div class="form-group">
+                            <div class="btn-group" style="margin-bottom:16px">
+                                <button class="btn btn-primary" onclick="fetchCertificate()">
+                                    <span class="spinner hidden" id="cert-spinner"></span>
+                                    Fetch Certificate Automatically
+                                </button>
+                            </div>
+                            <p id="cert-help" class="form-hint">
+                                Or extract manually: <code>openssl s_client -connect <span id="cert-host-hint">HOST</span>:443 -showcerts &lt;/dev/null 2&gt;/dev/null | openssl x509 -outform PEM</code>
+                            </p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="certificate">Certificate (PEM format)</label>
+                            <textarea id="certificate" rows="8" placeholder="-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----"></textarea>
+                        </div>
+
+                        <div id="cert-status" class="alert hidden"></div>
+
+                        <div class="wizard-actions">
+                            <button class="btn btn-secondary" onclick="wizardBack(2)">Back</button>
+                            <div class="btn-group">
+                                <button class="btn btn-secondary" onclick="testConnection()">Test Connection</button>
+                                <button class="btn btn-primary" onclick="wizardNext(2)">Next</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Doorbell Device -->
+                    <div class="wizard-content hidden" id="wizard-step-3">
+                        <h3 style="margin-bottom:8px">Select Reader Device</h3>
+                        <p class="form-hint" style="margin-bottom:24px">
+                            Choose which UniFi Access device will be used as the doorbell. This is typically an Access Reader installed at your door.
+                        </p>
+
+                        <div id="readers-loading" class="alert alert-info">
+                            <div class="spinner"></div>
+                            Loading devices from UniFi Access...
+                        </div>
+
+                        <div id="readers-list" class="device-list hidden"></div>
+                        <div id="readers-error" class="alert alert-error hidden"></div>
+
+                        <div id="manual-reader-section" class="hidden" style="margin-top:20px">
+                            <div class="form-group">
+                                <label for="manual-reader-id">Manual Entry (Device ID or MAC)</label>
+                                <div style="display:flex;gap:8px">
+                                    <input type="text" id="manual-reader-id" placeholder="e.g., aa:bb:cc:dd:ee:ff or device-uuid">
+                                    <button type="button" class="btn btn-primary" onclick="setManualReader()">Set</button>
+                                </div>
+                                <p class="form-hint">Enter the device ID (UUID) or MAC address. You can find this in the UniFi Access web interface.</p>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-top:20px">
+                            <label for="doorbell-name">Device Name (optional)</label>
+                            <input type="text" id="doorbell-name" placeholder="Front Door">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="door-name">Door Name (optional)</label>
+                            <input type="text" id="door-name" placeholder="Main Entrance">
+                        </div>
+
+                        <div class="wizard-actions">
+                            <button class="btn btn-secondary" onclick="wizardBack(3)">Back</button>
+                            <button class="btn btn-primary" onclick="wizardNext(3)">Next</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Complete -->
+                    <div class="wizard-content hidden" id="wizard-step-4">
+                        <div style="text-align:center; padding:20px 0">
+                            <svg style="width:64px;height:64px;fill:var(--accent-green)" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                            </svg>
+                            <h3 style="margin-top:16px">Setup Complete!</h3>
+                            <p class="form-hint" style="margin-top:8px">
+                                Your UniFi Doorbell is configured and ready to use.
+                            </p>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <strong>Configuration Summary:</strong>
+                            <div id="setup-summary" style="margin-top:12px; color:var(--text-secondary)"></div>
+                        </div>
+
+                        <div id="save-status" class="alert hidden" style="margin-top:16px"></div>
+
+                        <div class="wizard-actions">
+                            <button class="btn btn-secondary" onclick="wizardBack(4)">Back</button>
+                            <button class="btn btn-primary" onclick="saveAndReboot()">Save & Reboot</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Tab -->
+            <section id="tab-settings" class="tab-panel">
+                <!-- Network -->
+                <div class="card" id="wifi-card">
+                    <div class="card-header">
+                        <h2>WiFi Network</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="wifi-ssid">SSID</label>
+                            <input type="text" id="wifi-ssid" placeholder="Network name">
+                        </div>
+                        <div class="form-group">
+                            <label for="wifi-password">Password</label>
+                            <input type="password" id="wifi-password" placeholder="Leave blank to keep current">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MQTT -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>MQTT Integration</h2>
+                        <p>Optional: Publish doorbell events to an MQTT broker</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <div class="toggle-group">
+                                <label class="toggle">
+                                    <input type="checkbox" id="mqtt-enabled">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <span>Enable MQTT</span>
+                            </div>
+                        </div>
+
+                        <div id="mqtt-settings" class="hidden">
+                            <div class="form-group">
+                                <label for="mqtt-server">Server</label>
+                                <input type="text" id="mqtt-server" placeholder="mqtt.local">
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px">
+                                <div class="form-group">
+                                    <label for="mqtt-port">Port</label>
+                                    <input type="number" id="mqtt-port" value="1883" min="1" max="65535">
+                                </div>
+                                <div class="form-group">
+                                    <label for="mqtt-topic">Topic</label>
+                                    <input type="text" id="mqtt-topic" placeholder="home/doorbell">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <div class="toggle-group">
+                                    <label class="toggle">
+                                        <input type="checkbox" id="mqtt-auth">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <span>Authentication Required</span>
+                                </div>
+                            </div>
+
+                            <div id="mqtt-auth-fields" class="hidden">
+                                <div class="form-group">
+                                    <label for="mqtt-username">Username</label>
+                                    <input type="text" id="mqtt-username">
+                                </div>
+                                <div class="form-group">
+                                    <label for="mqtt-password">Password</label>
+                                    <input type="password" id="mqtt-password" placeholder="Leave blank to keep current">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Web UI Security -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Web Interface Security</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="web-username">Username</label>
+                            <input type="text" id="web-username">
+                        </div>
+                        <div class="form-group">
+                            <label for="web-password">New Password</label>
+                            <input type="password" id="web-password" placeholder="Leave blank to keep current">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GPIO Configuration -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>GPIO Configuration</h2>
+                        <p>Configure physical buttons and sensors connected to GPIO pins</p>
+                    </div>
+                    <div class="card-body">
+                        <div id="gpio-list"></div>
+                        <button class="btn btn-secondary" onclick="showGpioPresetMenu()" style="margin-top:16px">
+                            + Add GPIO
+                        </button>
+                    </div>
+                </div>
+
+                <!-- MQTT Triggers -->
+                <div class="card" id="mqtt-triggers-card">
+                    <div class="card-header">
+                        <h2>MQTT Triggers</h2>
+                        <p>Subscribe to MQTT topics and trigger actions based on JSON field values</p>
+                    </div>
+                    <div class="card-body">
+                        <div id="mqtt-triggers-list"></div>
+                        <button class="btn btn-secondary" onclick="addMqttTrigger()" style="margin-top:16px">
+                            + Add Trigger
+                        </button>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+                    <button class="btn btn-secondary" onclick="loadConfig()">Reload</button>
+                </div>
+            </section>
+
+            <!-- System Tab -->
+            <section id="tab-system" class="tab-panel">
+                <!-- Firmware -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Firmware Update</h2>
+                    </div>
+                    <div class="card-body">
+                        <p style="margin-bottom:16px">Current version: <strong id="firmware-version">--</strong></p>
+                        <div class="form-group">
+                            <label for="firmware-file">Select firmware file (.bin)</label>
+                            <input type="file" id="firmware-file" accept=".bin">
+                        </div>
+                        <div id="upload-progress" class="hidden" style="margin-bottom:16px">
+                            <div class="progress-bar">
+                                <div id="progress-fill" class="progress-fill" style="width:0%"></div>
+                            </div>
+                            <p id="progress-text" class="form-hint" style="margin-top:8px">Uploading...</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="uploadFirmware()">Upload Firmware</button>
+                    </div>
+                </div>
+
+                <!-- System Actions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>System Actions</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="btn-group">
+                            <button class="btn btn-secondary" onclick="rebootDevice()">Reboot Device</button>
+                            <button class="btn btn-danger" onclick="resetConfig()">Factory Reset</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

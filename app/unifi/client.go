@@ -378,7 +378,7 @@ type DoorbellRingRequest struct {
 	ViewerIDs    []string // Viewer device IDs to notify (notify_door_guards)
 }
 
-// TriggerDoorbellRing attempts to trigger a doorbell ring via the remote_call API
+// TriggerDoorbellRing triggers a doorbell ring via the remote_call API
 // This uses the DoorbellRequestBody format that the reader uses when someone presses the button
 func (c *Client) TriggerDoorbellRing(req DoorbellRingRequest) error {
 	url := c.getAccessAPIURL(fmt.Sprintf("/device/%s/remote_call", req.DeviceID))

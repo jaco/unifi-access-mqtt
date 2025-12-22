@@ -111,7 +111,7 @@ func (c *Controller) UnlockDoor(door *Door) error {
 	return c.client.Unlock(door.ID)
 }
 
-// TriggerDoorbellRing attempts to trigger a doorbell ring (experimental)
+// TriggerDoorbellRing triggers a doorbell ring via the remote_call API
 // This uses the DoorbellRequestBody format that the reader uses when someone presses the button
 func (c *Controller) TriggerDoorbellRing(door *Door) error {
 	var deviceID string

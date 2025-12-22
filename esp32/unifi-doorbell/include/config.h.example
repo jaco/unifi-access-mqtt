@@ -1,0 +1,87 @@
+/**
+ * Configuration for UniFi Access Doorbell Controller
+ *
+ * Standalone implementation - connects directly to UniFi Access controller.
+ * No external gateway required.
+ *
+ * FIRST TIME SETUP:
+ * 1. Copy this file to config.h
+ * 2. For WiFi boards: Leave defaults, device will start in AP mode for web configuration
+ * 3. For Ethernet boards: Fill in UniFi credentials below, or configure via web UI after boot
+ * 4. Build and flash the firmware
+ * 5. Upload the web UI: pio run -t uploadfs -e <your-env>
+ * 6. Access web UI at http://doorbell.local or device IP
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// =============================================================================
+// WiFi Settings (only needed for WiFi boards like ESP32-S3-Zero)
+// =============================================================================
+// Leave empty for AP mode setup via web UI
+// #define WIFI_SSID           ""
+// #define WIFI_PASSWORD       ""
+
+// =============================================================================
+// UniFi Access Controller Settings
+// =============================================================================
+// Can be configured via web UI at http://doorbell.local
+// For Ethernet boards without AP mode, you may want to set these for first boot
+// #define UNIFI_HOST          ""       // UniFi Access controller IP/hostname
+// #define UNIFI_USERNAME      ""       // UniFi username
+// #define UNIFI_PASSWORD      ""       // UniFi password
+
+// =============================================================================
+// Doorbell Device Configuration
+// =============================================================================
+// Configure via web UI - these are optional compile-time defaults
+//
+// You can use either:
+//   - MAC address (e.g., "AA:BB:CC:DD:EE:FF" or "aabbccddeeff")
+//   - Device UUID (e.g., "aabbccdd-1234-5678-9abc-def012345678")
+//
+// #define DOORBELL_DEVICE_ID   ""
+// #define DOORBELL_DEVICE_NAME ""
+// #define DOORBELL_DOOR_NAME   ""
+
+// Viewer device IDs/MACs (optional)
+// #define VIEWER_ID_1       ""
+// #define VIEWER_ID_2       ""
+
+// =============================================================================
+// MQTT Settings (Optional - for Home Assistant integration)
+// =============================================================================
+// Configure via web UI
+// #define MQTT_SERVER         ""
+// #define MQTT_PORT           1883
+// #define MQTT_USERNAME       ""
+// #define MQTT_PASSWORD       ""
+// #define MQTT_TOPIC          "home/doorbell"
+
+// =============================================================================
+// GPIO Pin Configuration
+// =============================================================================
+// Defaults are set automatically based on board type.
+// Uncomment to override.
+//
+// #define PIN_DISMISS_TRIGGER   36
+// #define PIN_RING_TRIGGER      39
+// #define PIN_STATUS_LED        2
+
+// =============================================================================
+// UniFi Controller SSL Certificate
+// =============================================================================
+// Can be configured via web UI, or set here for compile-time default.
+//
+// To extract the certificate from your UniFi controller:
+//   openssl s_client -connect YOUR_HOST:443 -showcerts </dev/null 2>/dev/null | openssl x509 -outform PEM
+//
+// Paste the certificate below (keep the backslash line continuations)
+
+static const char UNIFI_SERVER_CERT[] = \
+"-----BEGIN CERTIFICATE-----\n" \
+"YOUR_CERTIFICATE_HERE\n" \
+"-----END CERTIFICATE-----\n";
+
+#endif // CONFIG_H

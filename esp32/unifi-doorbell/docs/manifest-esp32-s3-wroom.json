@@ -1,0 +1,16 @@
+{
+  "name": "UniFi Doorbell (ESP32-S3-WROOM)",
+  "version": "1.0.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/esp32-s3-wroom/bootloader.bin", "offset": 0 },
+        { "path": "firmware/esp32-s3-wroom/partitions.bin", "offset": 32768 },
+        { "path": "firmware/esp32-s3-wroom/boot_app0.bin", "offset": 57344 },
+        { "path": "firmware/esp32-s3-wroom/firmware.bin", "offset": 65536 },
+        { "path": "firmware/esp32-s3-wroom/littlefs.bin", "offset": 3145728 }
+      ]
+    }
+  ]
+}
