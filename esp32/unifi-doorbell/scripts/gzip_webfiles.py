@@ -2,10 +2,49 @@ Import("env")
 import gzip
 import os
 import shutil
+import subprocess
+from datetime import datetime
+
+def get_ui_build_id():
+    """Generate a build ID from git hash and timestamp"""
+    project_dir = env.subst("$PROJECT_DIR")
+
+    # Get git short hash
+    git_hash = "unknown"
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, cwd=project_dir
+        )
+        if result.returncode == 0:
+            git_hash = result.stdout.strip()
+    except Exception:
+        pass
+
+    # Check for dirty state
+    dirty = ""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, cwd=project_dir
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            dirty = "-dirty"
+    except Exception:
+        pass
+
+    # Add timestamp
+    timestamp = datetime.now().strftime("%m%d-%H%M")
+
+    return f"{git_hash}{dirty}-{timestamp}"
 
 def gzip_webfiles(source, target, env):
     """Gzip web files before building the filesystem image."""
     data_dir = os.path.join(env.subst("$PROJECT_DIR"), "data")
+
+    # Generate build ID
+    build_id = get_ui_build_id()
+    print(f"  UI Build ID: {build_id}")
 
     # Files to gzip
     extensions = ['.html', '.js', '.css']
@@ -26,20 +65,34 @@ def gzip_webfiles(source, target, env):
 
         gz_path = filepath + '.gz'
 
+        # Always rebuild if source has __UI_BUILD_ID__ placeholder
+        force_rebuild = False
+        if filename == 'app.js':
+            with open(filepath, 'r') as f:
+                if '__UI_BUILD_ID__' in f.read():
+                    force_rebuild = True
+
         # Check if gzip is up to date
-        if os.path.exists(gz_path):
+        if not force_rebuild and os.path.exists(gz_path):
             if os.path.getmtime(gz_path) >= os.path.getmtime(filepath):
                 print(f"  Skipping {filename} (up to date)")
                 continue
 
-        # Gzip the file
+        # Read and process file content
         print(f"  Gzipping {filename}")
         with open(filepath, 'rb') as f_in:
-            with gzip.open(gz_path, 'wb', compresslevel=9) as f_out:
-                shutil.copyfileobj(f_in, f_out)
+            content = f_in.read()
+
+        # Replace build ID placeholder in JS files
+        if filename == 'app.js':
+            content = content.replace(b'__UI_BUILD_ID__', build_id.encode('utf-8'))
+
+        # Gzip the content
+        with gzip.open(gz_path, 'wb', compresslevel=9) as f_out:
+            f_out.write(content)
 
         # Show size reduction
-        orig_size = os.path.getsize(filepath)
+        orig_size = len(content)
         gz_size = os.path.getsize(gz_path)
         reduction = (1 - gz_size / orig_size) * 100
         print(f"    {orig_size} -> {gz_size} bytes ({reduction:.1f}% reduction)")

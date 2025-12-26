@@ -298,6 +298,32 @@ mqtt:
 
 ---
 
+## OTA Updates
+
+Usage:
+
+```bash
+# Build and upload both firmware and filesystem
+./upload-ota.sh --build
+
+# Upload both (pre-built)
+./upload-ota.sh
+
+# Upload only firmware
+./upload-ota.sh --firmware
+
+# Upload only filesystem (web UI)
+./upload-ota.sh --filesystem
+
+# Specify host/credentials
+./upload-ota.sh --host 192.168.1.50 --user admin --pass mypassword
+
+# Different environment
+./upload-ota.sh --build esp32-s3-zero
+```
+
+---
+
 ## License
 
 Apache License 2.0 - see [LICENSE](LICENSE) for details.

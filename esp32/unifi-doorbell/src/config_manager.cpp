@@ -147,6 +147,12 @@ void loadConfig() {
             appConfig.mqttTriggers[i].action = (MqttTriggerAction)prefs.getInt((prefix + "act").c_str(), MQTT_ACTION_NONE);
         }
 
+        // JWT secret
+        appConfig.jwtSecretInitialized = prefs.getBool("jwt_init", false);
+        if (appConfig.jwtSecretInitialized) {
+            prefs.getBytes("jwt_secret", appConfig.jwtSecret, 32);
+        }
+
         logPrintln("Config: Loaded from NVS");
     } else {
         // First run - migrate from config.h defaults
@@ -335,6 +341,12 @@ void saveConfig() {
 
     // Mark as configured
     prefs.putBool("configured", appConfig.configured);
+
+    // JWT secret
+    if (appConfig.jwtSecretInitialized) {
+        prefs.putBool("jwt_init", true);
+        prefs.putBytes("jwt_secret", appConfig.jwtSecret, 32);
+    }
 
     prefs.end();
     logPrintln("Config: Saved to NVS");

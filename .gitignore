@@ -13,3 +13,4 @@ unifi-access-mqtt
 dist/
 build/
 *.trace
+node_modules/

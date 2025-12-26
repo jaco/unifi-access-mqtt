@@ -108,6 +108,10 @@ struct AppConfig {
 
     // System state
     bool configured;  // false = first run, show AP mode
+
+    // JWT secret for persistent session tokens (32 bytes)
+    uint8_t jwtSecret[32];
+    bool jwtSecretInitialized;
 };
 
 // Global config instance

@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <time.h>
 
+// Forward declaration for log broadcast (implemented in webserver.cpp)
+void broadcastLog(const String& timestamp, const String& message);
+
 inline String getIsoTimestamp() {
   time_t now = time(nullptr);
   if (now < 1700000000) {
@@ -22,9 +25,11 @@ inline void logPrint(const String& msg) {
 }
 
 inline void logPrintln(const String& msg) {
-  Serial.print(getIsoTimestamp());
+  String timestamp = getIsoTimestamp();
+  Serial.print(timestamp);
   Serial.print(" ");
   Serial.println(msg);
+  broadcastLog(timestamp, msg);
 }
 
 inline void logPrintln() {

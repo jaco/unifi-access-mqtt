@@ -7,7 +7,12 @@
 #include "mqtt_client.h"
 #include "gpio.h"
 #include "ap_mode.h"
+#include "jwt.h"
 
+#include <WiFi.h>
+#if defined(USE_ETHERNET)
+  #include <ETH.h>
+#endif
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -31,27 +36,29 @@ static AsyncWebSocket ws("/ws");
 static unsigned long lastStatusBroadcast = 0;
 #define STATUS_BROADCAST_INTERVAL 5000
 
-// Session token for authentication
-static String authToken = "";
-static unsigned long authTokenExpiry = 0;
-#define AUTH_TOKEN_DURATION 3600000  // 1 hour
-
 // WiFi test state machine (for non-blocking test in AP mode)
 enum WifiTestState { WIFI_TEST_IDLE, WIFI_TEST_CONNECTING, WIFI_TEST_SUCCESS, WIFI_TEST_FAILED };
 static WifiTestState wifiTestState = WIFI_TEST_IDLE;
 static String wifiTestIp = "";
 static unsigned long wifiTestStartTime = 0;
 
-// Generate random auth token
-static String generateAuthToken() {
-    String token = "";
-    for (int i = 0; i < 32; i++) {
-        token += String(random(0, 16), HEX);
+// Initialize JWT with persistent secret
+static void initJwtSecret() {
+    if (appConfig.jwtSecretInitialized) {
+        // Load secret from config
+        setJwtSecret(appConfig.jwtSecret);
+        logPrintln("WebServer: JWT secret loaded from config");
+    } else {
+        // Generate new secret and save it
+        generateJwtSecret();
+        memcpy(appConfig.jwtSecret, getJwtSecret(), 32);
+        appConfig.jwtSecretInitialized = true;
+        saveConfig();
+        logPrintln("WebServer: Generated and saved new JWT secret");
     }
-    return token;
 }
 
-// Check authentication
+// Check authentication using JWT
 static bool checkAuth(AsyncWebServerRequest* request) {
     // In AP mode, skip authentication for easier setup
     if (apModeActive) {
@@ -65,7 +72,10 @@ static bool checkAuth(AsyncWebServerRequest* request) {
         if (tokenIdx >= 0) {
             int end = cookie.indexOf(";", tokenIdx);
             String token = (end > 0) ? cookie.substring(tokenIdx + 11, end) : cookie.substring(tokenIdx + 11);
-            if (token == authToken && millis() < authTokenExpiry) {
+
+            // Validate JWT token
+            String username = validateJwtToken(token);
+            if (username.length() > 0) {
                 return true;
             }
         }
@@ -84,6 +94,9 @@ static void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
 static String getStatusJson();
 
 void setupWebServer() {
+    // Initialize JWT with persistent secret
+    initJwtSecret();
+
     // Initialize LittleFS
     if (!LittleFS.begin(true)) {
         logPrintln("WebServer: LittleFS mount failed");
@@ -275,14 +288,15 @@ void setupWebServer() {
                     const char* expectedPass = strlen(appConfig.webPassword) > 0 ? appConfig.webPassword : "admin";
 
                     if (username == expectedUser && password == expectedPass) {
-                        authToken = generateAuthToken();
-                        authTokenExpiry = millis() + AUTH_TOKEN_DURATION;
+                        // Create JWT token (valid for 24 hours)
+                        String jwtToken = createJwtToken(username);
 
                         AsyncWebServerResponse* response = request->beginResponse(200, "application/json",
                             "{\"success\":true}");
-                        response->addHeader("Set-Cookie", "auth_token=" + authToken + "; Path=/; Max-Age=3600; HttpOnly");
+                        // Set cookie with 24 hour expiration (matches JWT expiration)
+                        response->addHeader("Set-Cookie", "auth_token=" + jwtToken + "; Path=/; Max-Age=86400; HttpOnly");
                         request->send(response);
-                        logPrintln("WebServer: User logged in");
+                        logPrintln("WebServer: User logged in with JWT");
                     } else {
                         request->send(401, "application/json", "{\"success\":false,\"message\":\"Invalid credentials\"}");
                     }
@@ -296,8 +310,7 @@ void setupWebServer() {
 
     // API: Logout
     server.on("/api/auth/logout", HTTP_POST, [](AsyncWebServerRequest* request) {
-        authToken = "";
-        authTokenExpiry = 0;
+        // Just clear the cookie - JWT is stateless
         AsyncWebServerResponse* response = request->beginResponse(200, "application/json", "{\"success\":true}");
         response->addHeader("Set-Cookie", "auth_token=; Path=/; Max-Age=0");
         request->send(response);
@@ -556,18 +569,10 @@ void setupWebServer() {
             if (!checkAuth(request)) { sendUnauthorized(request); return; }
 
             bool success = !Update.hasError();
-            AsyncWebServerResponse* response = request->beginResponse(
-                success ? 200 : 500,
-                "application/json",
-                success ? "{\"success\":true,\"message\":\"Update successful. Rebooting...\"}"
-                       : "{\"success\":false,\"message\":\"Update failed\"}"
-            );
-            response->addHeader("Connection", "close");
-            request->send(response);
-            if (success) {
-                delay(500);
-                ESP.restart();
+            if (!success) {
+                request->send(500, "application/json", "{\"success\":false,\"message\":\"Update failed\"}");
             }
+            // On success, we already restarted in the upload handler
         },
         // File upload handler (called for each chunk)
         [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
@@ -592,8 +597,59 @@ void setupWebServer() {
             if (final) {
                 if (Update.end(true)) {
                     logPrintln("OTA: Update complete, size: " + String(index + len));
+                    logPrintln("OTA: Rebooting...");
+                    Serial.flush();
+                    delay(50);
+                    ESP.restart();
                 } else {
                     logPrintln("OTA: Update.end failed");
+                    Update.printError(Serial);
+                }
+            }
+        }
+    );
+
+    // API: OTA filesystem upload
+    server.on("/api/ota/filesystem", HTTP_POST,
+        // Request handler (called when upload completes)
+        [](AsyncWebServerRequest* request) {
+            if (!checkAuth(request)) { sendUnauthorized(request); return; }
+
+            bool success = !Update.hasError();
+            if (!success) {
+                request->send(500, "application/json", "{\"success\":false,\"message\":\"Filesystem update failed\"}");
+            }
+            // On success, we already restarted in the upload handler
+        },
+        // File upload handler (called for each chunk)
+        [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
+            if (!checkAuth(request)) { return; }
+
+            if (index == 0) {
+                logPrintln("OTA: Starting filesystem update: " + filename);
+                // Start filesystem update
+                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
+                    logPrintln("OTA: Filesystem Update.begin failed");
+                    Update.printError(Serial);
+                }
+            }
+
+            if (Update.isRunning()) {
+                if (Update.write(data, len) != len) {
+                    logPrintln("OTA: Filesystem write failed");
+                    Update.printError(Serial);
+                }
+            }
+
+            if (final) {
+                if (Update.end(true)) {
+                    logPrintln("OTA: Filesystem update complete, size: " + String(index + len));
+                    logPrintln("OTA: Rebooting...");
+                    Serial.flush();
+                    delay(50);
+                    ESP.restart();
+                } else {
+                    logPrintln("OTA: Filesystem Update.end failed");
                     Update.printError(Serial);
                 }
             }
@@ -645,6 +701,19 @@ void broadcastDoorbellEvent(const String& event, const String& requestId, const 
     if (deviceId.length() > 0) {
         doc["deviceId"] = deviceId;
     }
+
+    String json;
+    serializeJson(doc, json);
+    ws.textAll(json);
+}
+
+void broadcastLog(const String& timestamp, const String& message) {
+    if (ws.count() == 0) return;
+
+    JsonDocument doc;
+    doc["type"] = "log";
+    doc["timestamp"] = timestamp;
+    doc["message"] = message;
 
     String json;
     serializeJson(doc, json);
@@ -703,8 +772,14 @@ static String getStatusJson() {
     doc["network"]["connected"] = networkConnected;
     #if defined(USE_ETHERNET)
         doc["network"]["type"] = "ethernet";
+        if (networkConnected) {
+            doc["network"]["ip"] = ETH.localIP().toString();
+        }
     #else
         doc["network"]["type"] = "wifi";
+        if (networkConnected) {
+            doc["network"]["ip"] = WiFi.localIP().toString();
+        }
     #endif
 
     // UniFi
