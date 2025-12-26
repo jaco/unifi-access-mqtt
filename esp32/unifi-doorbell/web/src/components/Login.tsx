@@ -47,6 +47,7 @@ export function Login({ onSuccess }: LoginProps) {
               placeholder="admin"
               value={username}
               onInput={(e) => setUsername((e.target as HTMLInputElement).value)}
+              autoFocus
               required
             />
           </div>

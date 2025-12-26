@@ -109,6 +109,7 @@ export function ApSetup() {
               placeholder="Your WiFi network"
               value={ssid}
               onInput={(e) => setSsid((e.target as HTMLInputElement).value)}
+              autoFocus
               required
             />
           </div>
