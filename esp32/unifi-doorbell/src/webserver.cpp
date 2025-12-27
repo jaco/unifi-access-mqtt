@@ -714,6 +714,10 @@ void broadcastDoorbellEvent(const String& event, const String& requestId, const 
 }
 
 void broadcastLog(const String& timestamp, const String& message) {
+    // Publish to MQTT
+    publishMqttLog(timestamp + " " + message);
+
+    // Broadcast via WebSocket
     if (ws.count() == 0) return;
 
     JsonDocument doc;

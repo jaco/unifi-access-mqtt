@@ -11,3 +11,4 @@ void setupMqtt();
 void mqttLoop();
 void mqttReconnect();
 void publishDoorbellState(bool ringing);
+void publishMqttLog(const String& message);

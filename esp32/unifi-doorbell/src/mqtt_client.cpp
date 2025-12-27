@@ -4,14 +4,51 @@
 #include "config.h"
 #include "unifi_api.h"
 #include "websocket.h"
+#include <WiFi.h>
+#if defined(USE_ETHERNET)
+  #include <ETH.h>
+#endif
 #include <WiFiClient.h>
 #include <ArduinoJson.h>
+
+// Firmware version - defined by build script
+#ifndef FIRMWARE_VERSION
+#define FIRMWARE_VERSION "dev"
+#endif
 
 static WiFiClient netClient;
 PubSubClient mqtt(netClient);
 
 static unsigned long lastMqttReconnect = 0;
 #define MQTT_RETRY_INTERVAL 5000
+
+// Get current IP address
+static String getLocalIP() {
+#if defined(USE_ETHERNET)
+  return ETH.localIP().toString();
+#else
+  return WiFi.localIP().toString();
+#endif
+}
+
+// Publish bridge status information
+static void publishBridgeInfo() {
+  if (!mqtt.connected()) return;
+
+  String baseTopic = String(appConfig.mqttTopic) + "/bridge";
+
+  // Publish online state (retained)
+  mqtt.publish((baseTopic + "/state").c_str(), "online", true);
+
+  // Publish version (retained)
+  mqtt.publish((baseTopic + "/version").c_str(), FIRMWARE_VERSION, true);
+
+  // Publish IP address (retained)
+  String ip = getLocalIP();
+  mqtt.publish((baseTopic + "/ip").c_str(), ip.c_str(), true);
+
+  logPrintln("MQTT: Published bridge info (state=online, version=" + String(FIRMWARE_VERSION) + ", ip=" + ip + ")");
+}
 
 static void mqttCallback(char* topic, byte* payload, unsigned int length);
 
@@ -60,17 +97,25 @@ void mqttReconnect() {
 
   String clientId = "esp32-doorbell-" + String(random(0xffff), HEX);
 
+  // LWT (Last Will Testament) for bridge state
+  String willTopic = String(appConfig.mqttTopic) + "/bridge/state";
+  const char* willMessage = "offline";
+
   bool connected = false;
   if (appConfig.mqttAuthEnabled && strlen(appConfig.mqttUsername) > 0) {
     logPrintln("MQTT: Using auth: " + String(appConfig.mqttUsername));
-    connected = mqtt.connect(clientId.c_str(), appConfig.mqttUsername, appConfig.mqttPassword);
+    connected = mqtt.connect(clientId.c_str(), appConfig.mqttUsername, appConfig.mqttPassword,
+                             willTopic.c_str(), 0, true, willMessage);
   } else {
     logPrintln("MQTT: No auth");
-    connected = mqtt.connect(clientId.c_str());
+    connected = mqtt.connect(clientId.c_str(), willTopic.c_str(), 0, true, willMessage);
   }
 
   if (connected) {
     logPrintln("MQTT: Connected");
+
+    // Publish bridge info (state=online, version, ip)
+    publishBridgeInfo();
 
     // Subscribe to command topic
     String cmdTopic = String(appConfig.mqttTopic) + "/set";
@@ -242,4 +287,12 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
       executeTriggerAction(trigger.action, trigger.label);
     }
   }
+}
+
+void publishMqttLog(const String& message) {
+  if (!mqtt.connected()) return;
+  if (!appConfig.mqttEnabled) return;
+
+  String topic = String(appConfig.mqttTopic) + "/bridge/logs";
+  mqtt.publish(topic.c_str(), message.c_str(), false);  // Not retained
 }
