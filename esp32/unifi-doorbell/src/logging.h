@@ -3,8 +3,9 @@
 #include <Arduino.h>
 #include <time.h>
 
-// Forward declaration for log broadcast (implemented in webserver.cpp)
-void broadcastLog(const String& timestamp, const String& message);
+// Forward declarations for log broadcast (implemented in webserver.cpp)
+void broadcastLog(const String& timestamp, const String& message);       // Serial + WebSocket + MQTT
+void broadcastLogLocal(const String& timestamp, const String& message);  // Serial + WebSocket only
 
 inline String getIsoTimestamp() {
   time_t now = time(nullptr);
@@ -18,13 +19,8 @@ inline String getIsoTimestamp() {
   return String(buf);
 }
 
-inline void logPrint(const String& msg) {
-  Serial.print(getIsoTimestamp());
-  Serial.print(" ");
-  Serial.print(msg);
-}
-
-inline void logPrintln(const String& msg) {
+// Main logging function - Serial + WebSocket + MQTT
+inline void log(const String& msg) {
   String timestamp = getIsoTimestamp();
   Serial.print(timestamp);
   Serial.print(" ");
@@ -32,6 +28,11 @@ inline void logPrintln(const String& msg) {
   broadcastLog(timestamp, msg);
 }
 
-inline void logPrintln() {
-  Serial.println();
+// Debug logging - Serial + WebSocket only (no MQTT)
+inline void logDebug(const String& msg) {
+  String timestamp = getIsoTimestamp();
+  Serial.print(timestamp);
+  Serial.print(" ");
+  Serial.println(msg);
+  broadcastLogLocal(timestamp, msg);
 }

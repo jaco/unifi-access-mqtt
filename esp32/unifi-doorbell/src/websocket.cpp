@@ -94,20 +94,20 @@ void initWebSocket() {
       if (psramFound()) {
         pendingMessage = (char*)ps_malloc(MESSAGE_BUFFER_SIZE);
         if (pendingMessage) {
-          logPrintln("WebSocket: Message buffer allocated in PSRAM (8KB)");
+          log("WebSocket: Message buffer allocated in PSRAM (8KB)");
         }
       }
     #endif
     if (pendingMessage == nullptr) {
       pendingMessage = (char*)malloc(MESSAGE_BUFFER_SIZE);
       if (pendingMessage) {
-        logPrintln("WebSocket: Message buffer allocated in RAM (8KB)");
+        log("WebSocket: Message buffer allocated in RAM (8KB)");
       }
     }
     if (pendingMessage) {
       pendingMessage[0] = '\0';
     } else {
-      logPrintln("WebSocket: ERROR - Failed to allocate message buffer!");
+      log("WebSocket: ERROR - Failed to allocate message buffer!");
     }
   }
 }
@@ -115,7 +115,7 @@ void initWebSocket() {
 void disconnectWebSocket() {
   if (wsClient != NULL) {
     if (wsConnected) {
-      logPrintln("WebSocket: Disconnecting...");
+      log("WebSocket: Disconnecting...");
     }
     esp_websocket_client_close(wsClient, pdMS_TO_TICKS(1000));
     esp_websocket_client_destroy(wsClient);
@@ -134,7 +134,7 @@ void connectWebSocket() {
   disconnectWebSocket();
   wsLastError = "";  // Clear error when attempting new connection
 
-  logPrintln("WebSocket: Connecting via ESP-IDF client...");
+  log("WebSocket: Connecting via ESP-IDF client...");
 
   // Build URL and headers into static buffers
   snprintf(wsUri, sizeof(wsUri), "wss://%s/proxy/access/api/v2/ws/notification", appConfig.unifiHost);
@@ -165,7 +165,7 @@ void connectWebSocket() {
   // Create client
   wsClient = esp_websocket_client_init(&ws_cfg);
   if (wsClient == NULL) {
-    logPrintln("WebSocket: Failed to create client");
+    log("WebSocket: Failed to create client");
     return;
   }
 
@@ -176,7 +176,7 @@ void connectWebSocket() {
   // Start connection (runs in its own FreeRTOS task)
   esp_err_t err = esp_websocket_client_start(wsClient);
   if (err != ESP_OK) {
-    logPrintln("WebSocket: Failed to start, err=" + String(err));
+    log("WebSocket: Failed to start, err=" + String(err));
     esp_websocket_client_destroy(wsClient);
     wsClient = NULL;
   }
@@ -213,7 +213,7 @@ void processWebSocketMessage() {
   }
   pendingMessageProcess = false;
 
-  logPrintln("WebSocket: Processing doorbell event");
+  log("WebSocket: Processing doorbell event");
   handleWebSocketMessage(pendingMessage);
 }
 
@@ -225,7 +225,7 @@ static void handleWebSocketMessage(const char* message) {
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, message);
   if (error) {
-    logPrintln("WebSocket: JSON parse error: " + String(error.c_str()));
+    log("WebSocket: JSON parse error: " + String(error.c_str()));
     return;
   }
 
@@ -244,9 +244,9 @@ static void handleWebSocketMessage(const char* message) {
         activeConnectedUahId = connectedUahId;
         activeCallTime = millis();
 
-        logPrintln("WebSocket: Doorbell ring detected!");
-        logPrintln("  request_id: " + activeRequestId);
-        logPrintln("  device_id: " + activeDeviceId);
+        log("WebSocket: Doorbell ring detected!");
+        log("  request_id: " + activeRequestId);
+        log("  device_id: " + activeDeviceId);
 
         pendingDoorbellStatePublish = true;
         pendingDoorbellRinging = true;
@@ -263,7 +263,7 @@ static void handleWebSocketMessage(const char* message) {
       const char* remoteCallRequestId = data["remote_call_request_id"] | "";
 
       if (strlen(remoteCallRequestId) > 0 && activeRequestId == remoteCallRequestId) {
-        logPrintln("WebSocket: Doorbell call ended");
+        log("WebSocket: Doorbell call ended");
         activeRequestId = "";
         activeDeviceId = "";
         activeConnectedUahId = "";

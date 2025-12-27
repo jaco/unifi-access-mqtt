@@ -66,7 +66,7 @@ void loadConfig() {
 
     if (appConfig.configured) {
         // Load from NVS
-        logPrintln("Config: Loading from NVS...");
+        log("Config: Loading from NVS...");
 
         // WiFi
         String ssid = prefs.getString("wifi_ssid", "");
@@ -153,10 +153,10 @@ void loadConfig() {
             prefs.getBytes("jwt_secret", appConfig.jwtSecret, 32);
         }
 
-        logPrintln("Config: Loaded from NVS");
+        log("Config: Loaded from NVS");
     } else {
         // First run - migrate from config.h defaults
-        logPrintln("Config: First run, using config.h defaults...");
+        log("Config: First run, using config.h defaults...");
 
         // WiFi (if defined)
         #ifdef WIFI_SSID
@@ -240,14 +240,14 @@ void loadConfig() {
         #if defined(UNIFI_HOST) && defined(UNIFI_USERNAME) && defined(UNIFI_PASSWORD)
             if (strlen(appConfig.unifiHost) > 0 && strlen(appConfig.unifiUsername) > 0) {
                 appConfig.configured = true;
-                logPrintln("Config: Migrated from config.h, saving to NVS...");
+                log("Config: Migrated from config.h, saving to NVS...");
                 prefs.end();
                 saveConfig();
                 return;
             }
         #endif
 
-        logPrintln("Config: No valid config found, AP mode needed");
+        log("Config: No valid config found, AP mode needed");
     }
 
     prefs.end();
@@ -349,7 +349,7 @@ void saveConfig() {
     }
 
     prefs.end();
-    logPrintln("Config: Saved to NVS");
+    log("Config: Saved to NVS");
 }
 
 void resetConfig() {
@@ -358,7 +358,7 @@ void resetConfig() {
     prefs.end();
 
     initConfigManager();
-    logPrintln("Config: Reset to defaults");
+    log("Config: Reset to defaults");
 }
 
 bool hasWifiCredentials() {
@@ -455,7 +455,7 @@ bool updateConfigFromJson(const String& json) {
     DeserializationError error = deserializeJson(doc, json);
 
     if (error) {
-        logPrintln("Config: JSON parse error: " + String(error.c_str()));
+        log("Config: JSON parse error: " + String(error.c_str()));
         return false;
     }
 
@@ -650,7 +650,7 @@ bool updateConfigFromJson(const String& json) {
 
 bool saveCertificate(const String& cert) {
     if (cert.length() == 0 || cert.length() > CFG_MAX_CERT_LEN) {
-        logPrintln("Config: Invalid certificate length (" + String(cert.length()) + " bytes)");
+        log("Config: Invalid certificate length (" + String(cert.length()) + " bytes)");
         return false;
     }
 
@@ -660,12 +660,12 @@ bool saveCertificate(const String& cert) {
     certPrefs.end();
 
     if (written == 0) {
-        logPrintln("Config: Failed to write certificate to NVS");
+        log("Config: Failed to write certificate to NVS");
         return false;
     }
 
     loadCertificate();
-    logPrintln("Config: Certificate saved (" + String(cert.length()) + " bytes)");
+    log("Config: Certificate saved (" + String(cert.length()) + " bytes)");
     return true;
 }
 

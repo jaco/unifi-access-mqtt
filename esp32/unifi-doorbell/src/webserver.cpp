@@ -52,14 +52,14 @@ static void initJwtSecret() {
     if (appConfig.jwtSecretInitialized) {
         // Load secret from config
         setJwtSecret(appConfig.jwtSecret);
-        logPrintln("WebServer: JWT secret loaded from config");
+        log("WebServer: JWT secret loaded from config");
     } else {
         // Generate new secret and save it
         generateJwtSecret();
         memcpy(appConfig.jwtSecret, getJwtSecret(), 32);
         appConfig.jwtSecretInitialized = true;
         saveConfig();
-        logPrintln("WebServer: Generated and saved new JWT secret");
+        log("WebServer: Generated and saved new JWT secret");
     }
 }
 
@@ -104,15 +104,15 @@ void setupWebServer() {
 
     // Initialize LittleFS
     if (!LittleFS.begin(true)) {
-        logPrintln("WebServer: LittleFS mount failed");
+        log("WebServer: LittleFS mount failed");
     } else {
-        logPrintln("WebServer: LittleFS mounted");
+        log("WebServer: LittleFS mounted");
     }
 
     // Start mDNS (doorbell.local)
     if (MDNS.begin("doorbell")) {
         MDNS.addService("http", "tcp", 80);
-        logPrintln("WebServer: mDNS started: doorbell.local");
+        log("WebServer: mDNS started: doorbell.local");
     }
 
     // WebSocket handler
@@ -158,7 +158,7 @@ void setupWebServer() {
                         return;
                     }
 
-                    logPrintln("WebServer: Starting WiFi test to " + ssid);
+                    log("WebServer: Starting WiFi test to " + ssid);
 
                     // Start connection attempt (non-blocking)
                     WiFi.mode(WIFI_AP_STA);
@@ -189,12 +189,12 @@ void setupWebServer() {
             if (WiFi.status() == WL_CONNECTED) {
                 wifiTestIp = WiFi.localIP().toString();
                 wifiTestState = WIFI_TEST_SUCCESS;
-                logPrintln("WebServer: WiFi test successful, IP: " + wifiTestIp);
+                log("WebServer: WiFi test successful, IP: " + wifiTestIp);
                 // Don't disconnect yet - let /api/wifi/setup handle cleanup
             } else if (millis() - wifiTestStartTime > 15000) {
                 // Timeout after 15 seconds
                 wifiTestState = WIFI_TEST_FAILED;
-                logPrintln("WebServer: WiFi test failed - timeout");
+                log("WebServer: WiFi test failed - timeout");
                 WiFi.disconnect(true);
                 WiFi.mode(WIFI_AP);
             }
@@ -257,7 +257,7 @@ void setupWebServer() {
                         appConfig.configured = true;
                         saveConfig();
 
-                        logPrintln("WebServer: WiFi configured via AP mode, rebooting...");
+                        log("WebServer: WiFi configured via AP mode, rebooting...");
                         request->send(200, "application/json", "{\"success\":true,\"message\":\"WiFi configured. Rebooting...\"}");
 
                         // Delay to allow response to be sent, then reboot
@@ -301,7 +301,7 @@ void setupWebServer() {
                         // Set cookie with 24 hour expiration (matches JWT expiration)
                         response->addHeader("Set-Cookie", "auth_token=" + jwtToken + "; Path=/; Max-Age=86400; HttpOnly");
                         request->send(response);
-                        logPrintln("WebServer: User logged in with JWT");
+                        log("WebServer: User logged in with JWT");
                     } else {
                         request->send(401, "application/json", "{\"success\":false,\"message\":\"Invalid credentials\"}");
                     }
@@ -389,7 +389,7 @@ void setupWebServer() {
             return;
         }
 
-        logPrintln("WebServer: Fetching certificate from " + host);
+        log("WebServer: Fetching certificate from " + host);
 
         WiFiClientSecure client;
         client.setInsecure(); // Don't verify - we're fetching the cert
@@ -450,7 +450,7 @@ void setupWebServer() {
         serializeJson(doc, json);
         request->send(200, "application/json", json);
 
-        logPrintln("WebServer: Certificate fetched successfully (" + String(pem.length()) + " bytes)");
+        log("WebServer: Certificate fetched successfully (" + String(pem.length()) + " bytes)");
     });
 
     // API: Test UniFi connection
@@ -462,7 +462,7 @@ void setupWebServer() {
             return;
         }
 
-        logPrintln("WebServer: Testing UniFi connection...");
+        log("WebServer: Testing UniFi connection...");
 
         // Try to login
         if (unifiLogin()) {
@@ -585,30 +585,30 @@ void setupWebServer() {
             if (!checkAuth(request)) { return; }
 
             if (index == 0) {
-                logPrintln("OTA: Starting update: " + filename);
+                log("OTA: Starting update: " + filename);
                 // Start update with max available size
                 if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-                    logPrintln("OTA: Update.begin failed");
+                    log("OTA: Update.begin failed");
                     Update.printError(Serial);
                 }
             }
 
             if (Update.isRunning()) {
                 if (Update.write(data, len) != len) {
-                    logPrintln("OTA: Write failed");
+                    log("OTA: Write failed");
                     Update.printError(Serial);
                 }
             }
 
             if (final) {
                 if (Update.end(true)) {
-                    logPrintln("OTA: Update complete, size: " + String(index + len));
-                    logPrintln("OTA: Rebooting...");
+                    log("OTA: Update complete, size: " + String(index + len));
+                    log("OTA: Rebooting...");
                     Serial.flush();
                     delay(50);
                     ESP.restart();
                 } else {
-                    logPrintln("OTA: Update.end failed");
+                    log("OTA: Update.end failed");
                     Update.printError(Serial);
                 }
             }
@@ -632,30 +632,30 @@ void setupWebServer() {
             if (!checkAuth(request)) { return; }
 
             if (index == 0) {
-                logPrintln("OTA: Starting filesystem update: " + filename);
+                log("OTA: Starting filesystem update: " + filename);
                 // Start filesystem update
                 if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
-                    logPrintln("OTA: Filesystem Update.begin failed");
+                    log("OTA: Filesystem Update.begin failed");
                     Update.printError(Serial);
                 }
             }
 
             if (Update.isRunning()) {
                 if (Update.write(data, len) != len) {
-                    logPrintln("OTA: Filesystem write failed");
+                    log("OTA: Filesystem write failed");
                     Update.printError(Serial);
                 }
             }
 
             if (final) {
                 if (Update.end(true)) {
-                    logPrintln("OTA: Filesystem update complete, size: " + String(index + len));
-                    logPrintln("OTA: Rebooting...");
+                    log("OTA: Filesystem update complete, size: " + String(index + len));
+                    log("OTA: Rebooting...");
                     Serial.flush();
                     delay(50);
                     ESP.restart();
                 } else {
-                    logPrintln("OTA: Filesystem Update.end failed");
+                    log("OTA: Filesystem Update.end failed");
                     Update.printError(Serial);
                 }
             }
@@ -671,7 +671,7 @@ void setupWebServer() {
     });
 
     server.begin();
-    logPrintln("WebServer: Started on port 80");
+    log("WebServer: Started on port 80");
 }
 
 void webServerLoop() {
@@ -730,17 +730,31 @@ void broadcastLog(const String& timestamp, const String& message) {
     ws.textAll(json);
 }
 
+void broadcastLogLocal(const String& timestamp, const String& message) {
+    // WebSocket only - no MQTT (for debug/verbose logging)
+    if (ws.count() == 0) return;
+
+    JsonDocument doc;
+    doc["type"] = "log";
+    doc["timestamp"] = timestamp;
+    doc["message"] = message;
+
+    String json;
+    serializeJson(doc, json);
+    ws.textAll(json);
+}
+
 static void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
                       AwsEventType type, void* arg, uint8_t* data, size_t len) {
     switch (type) {
         case WS_EVT_CONNECT:
-            logPrintln("WebSocket client connected: " + String(client->id()));
+            log("WebSocket client connected: " + String(client->id()));
             // Send initial status
             client->text(getStatusJson());
             break;
 
         case WS_EVT_DISCONNECT:
-            logPrintln("WebSocket client disconnected: " + String(client->id()));
+            log("WebSocket client disconnected: " + String(client->id()));
             break;
 
         case WS_EVT_DATA: {
@@ -759,7 +773,7 @@ static void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
         }
 
         case WS_EVT_ERROR:
-            logPrintln("WebSocket error: " + String(client->id()));
+            log("WebSocket error: " + String(client->id()));
             break;
 
         case WS_EVT_PONG:

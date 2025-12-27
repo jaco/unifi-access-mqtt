@@ -26,13 +26,13 @@ void setupStatusLed() {
     neopixel.setBrightness(30);  // Low brightness to not be blinding
     neopixel.clear();
     neopixel.show();
-    logPrintln("Status LED: NeoPixel on GPIO " + String(PIN_NEOPIXEL));
+    log("Status LED: NeoPixel on GPIO " + String(PIN_NEOPIXEL));
   #elif PIN_STATUS_LED >= 0
     pinMode(PIN_STATUS_LED, OUTPUT);
     digitalWrite(PIN_STATUS_LED, LOW);
-    logPrintln("Status LED: GPIO " + String(PIN_STATUS_LED));
+    log("Status LED: GPIO " + String(PIN_STATUS_LED));
   #else
-    logPrintln("Status LED: disabled");
+    log("Status LED: disabled");
   #endif
 }
 
@@ -43,12 +43,13 @@ void printSystemStatus() {
   uint32_t usedHeap = heapSize - freeHeap;
   float heapUsagePercent = (float)usedHeap / heapSize * 100.0;
 
-  logPrintln("--- System Status ---");
-  logPrintln("  Heap: " + String(usedHeap / 1024) + "KB / " + String(heapSize / 1024) + "KB (" + String(heapUsagePercent, 1) + "% used)");
-  logPrintln("  Free: " + String(freeHeap / 1024) + "KB, Min free: " + String(minFreeHeap / 1024) + "KB");
-  logPrintln("  CPU: " + String(ESP.getCpuFreqMHz()) + " MHz");
-  logPrintln("  Uptime: " + String(millis() / 1000 / 60) + " min");
-  logPrintln("  WS: " + String(wsConnected ? "connected" : "disconnected") + " (reconnects: " + String(getWsReconnectCount()) + "), MQTT: " + String(mqtt.connected() ? "connected" : "disconnected"));
+  // Use logDebug for system status (Serial + WebSocket only, no MQTT)
+  logDebug("--- System Status ---");
+  logDebug("  Heap: " + String(usedHeap / 1024) + "KB / " + String(heapSize / 1024) + "KB (" + String(heapUsagePercent, 1) + "% used)");
+  logDebug("  Free: " + String(freeHeap / 1024) + "KB, Min free: " + String(minFreeHeap / 1024) + "KB");
+  logDebug("  CPU: " + String(ESP.getCpuFreqMHz()) + " MHz");
+  logDebug("  Uptime: " + String(millis() / 1000 / 60) + " min");
+  logDebug("  WS: " + String(wsConnected ? "connected" : "disconnected") + " (reconnects: " + String(getWsReconnectCount()) + "), MQTT: " + String(mqtt.connected() ? "connected" : "disconnected"));
 }
 
 void updateStatusLed(bool isRinging) {

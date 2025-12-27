@@ -22,18 +22,18 @@ bool networkConnected = false;
 void onEthEvent(WiFiEvent_t event) {
   switch (event) {
     case ARDUINO_EVENT_ETH_START:
-      logPrintln("ETH: Started");
+      log("ETH: Started");
       ETH.setHostname("unifi-doorbell");
       break;
     case ARDUINO_EVENT_ETH_CONNECTED:
-      logPrintln("ETH: Connected");
+      log("ETH: Connected");
       break;
     case ARDUINO_EVENT_ETH_GOT_IP:
-      logPrintln("ETH: Got IP: " + ETH.localIP().toString());
+      log("ETH: Got IP: " + ETH.localIP().toString());
       networkConnected = true;
       break;
     case ARDUINO_EVENT_ETH_DISCONNECTED:
-      logPrintln("ETH: Disconnected");
+      log("ETH: Disconnected");
       disconnectWebSocket();
       networkConnected = false;
       isLoggedIn = false;
@@ -44,7 +44,7 @@ void onEthEvent(WiFiEvent_t event) {
 }
 
 void setupNetwork() {
-  logPrintln("Initializing Ethernet...");
+  log("Initializing Ethernet...");
   WiFi.onEvent(onEthEvent);
   ETH.begin();
 }
@@ -63,10 +63,10 @@ static unsigned long lastWifiCheck = 0;
 #define WIFI_CHECK_INTERVAL 10000
 
 void setupNetwork() {
-  logPrintln("Initializing WiFi...");
+  log("Initializing WiFi...");
 
   if (!hasWifiCredentials()) {
-    logPrintln("WiFi: No credentials configured");
+    log("WiFi: No credentials configured");
     return;
   }
 
@@ -74,23 +74,22 @@ void setupNetwork() {
   WiFi.setHostname("unifi-doorbell");
   WiFi.begin(appConfig.wifiSsid, appConfig.wifiPassword);
 
-  logPrint("Connecting to WiFi: " + String(appConfig.wifiSsid));
+  Serial.print("Connecting to WiFi: " + String(appConfig.wifiSsid));
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 30) {
     delay(500);
     Serial.print(".");
     attempts++;
   }
+  Serial.println();
 
   if (WiFi.status() == WL_CONNECTED) {
-    logPrintln();
-    logPrintln("WiFi: Connected, IP: " + WiFi.localIP().toString());
+    log("WiFi: Connected, IP: " + WiFi.localIP().toString());
     // Disable power saving for more stable connection
     WiFi.setSleep(false);
     networkConnected = true;
   } else {
-    logPrintln();
-    logPrintln("WiFi: Connection failed, will retry...");
+    log("WiFi: Connection failed, will retry...");
   }
 }
 
@@ -104,13 +103,13 @@ void networkLoop() {
 
   if (WiFi.status() == WL_CONNECTED) {
     if (!networkConnected) {
-      logPrintln("WiFi: Reconnected, IP: " + WiFi.localIP().toString());
+      log("WiFi: Reconnected, IP: " + WiFi.localIP().toString());
       WiFi.setSleep(false);
       networkConnected = true;
     }
   } else {
     if (networkConnected) {
-      logPrintln("WiFi: Disconnected");
+      log("WiFi: Disconnected");
       disconnectWebSocket();
       networkConnected = false;
       isLoggedIn = false;
@@ -118,7 +117,7 @@ void networkLoop() {
 
     if (now - lastWifiCheck > WIFI_CHECK_INTERVAL) {
       lastWifiCheck = now;
-      logPrintln("WiFi: Attempting reconnect...");
+      log("WiFi: Attempting reconnect...");
       WiFi.disconnect();
       WiFi.begin(appConfig.wifiSsid, appConfig.wifiPassword);
     }

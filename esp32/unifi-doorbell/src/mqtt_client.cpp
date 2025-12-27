@@ -47,23 +47,23 @@ static void publishBridgeInfo() {
   String ip = getLocalIP();
   mqtt.publish((baseTopic + "/ip").c_str(), ip.c_str(), true);
 
-  logPrintln("MQTT: Published bridge info (state=online, version=" + String(FIRMWARE_VERSION) + ", ip=" + ip + ")");
+  log("MQTT: Published bridge info (state=online, version=" + String(FIRMWARE_VERSION) + ", ip=" + ip + ")");
 }
 
 static void mqttCallback(char* topic, byte* payload, unsigned int length);
 
 void setupMqtt() {
   if (!appConfig.mqttEnabled) {
-    logPrintln("MQTT: Disabled");
+    log("MQTT: Disabled");
     return;
   }
 
   if (strlen(appConfig.mqttServer) == 0) {
-    logPrintln("MQTT: No server configured");
+    log("MQTT: No server configured");
     return;
   }
 
-  logPrintln("MQTT: Server=" + String(appConfig.mqttServer) +
+  log("MQTT: Server=" + String(appConfig.mqttServer) +
              " Port=" + String(appConfig.mqttPort) +
              " Topic=" + String(appConfig.mqttTopic) +
              " Auth=" + String(appConfig.mqttAuthEnabled ? "yes" : "no"));
@@ -72,7 +72,7 @@ void setupMqtt() {
   mqtt.setCallback(mqttCallback);
   mqtt.setBufferSize(1024);
   mqtt.setSocketTimeout(3);  // 3 second timeout
-  logPrintln("MQTT: Configured");
+  log("MQTT: Configured");
 }
 
 void mqttLoop() {
@@ -86,11 +86,11 @@ void mqttReconnect() {
   if (millis() - lastMqttReconnect < MQTT_RETRY_INTERVAL) return;
 
   lastMqttReconnect = millis();
-  logPrintln("MQTT: Connecting to " + String(appConfig.mqttServer) + ":" + String(appConfig.mqttPort));
+  log("MQTT: Connecting to " + String(appConfig.mqttServer) + ":" + String(appConfig.mqttPort));
 
   // Test TCP connectivity first
   if (!netClient.connect(appConfig.mqttServer, appConfig.mqttPort)) {
-    logPrintln("MQTT: TCP connection failed to " + String(appConfig.mqttServer) + ":" + String(appConfig.mqttPort));
+    log("MQTT: TCP connection failed to " + String(appConfig.mqttServer) + ":" + String(appConfig.mqttPort));
     return;
   }
   netClient.stop();  // Close test connection
@@ -103,16 +103,16 @@ void mqttReconnect() {
 
   bool connected = false;
   if (appConfig.mqttAuthEnabled && strlen(appConfig.mqttUsername) > 0) {
-    logPrintln("MQTT: Using auth: " + String(appConfig.mqttUsername));
+    log("MQTT: Using auth: " + String(appConfig.mqttUsername));
     connected = mqtt.connect(clientId.c_str(), appConfig.mqttUsername, appConfig.mqttPassword,
                              willTopic.c_str(), 0, true, willMessage);
   } else {
-    logPrintln("MQTT: No auth");
+    log("MQTT: No auth");
     connected = mqtt.connect(clientId.c_str(), willTopic.c_str(), 0, true, willMessage);
   }
 
   if (connected) {
-    logPrintln("MQTT: Connected");
+    log("MQTT: Connected");
 
     // Publish bridge info (state=online, version, ip)
     publishBridgeInfo();
@@ -120,13 +120,13 @@ void mqttReconnect() {
     // Subscribe to command topic
     String cmdTopic = String(appConfig.mqttTopic) + "/set";
     mqtt.subscribe(cmdTopic.c_str());
-    logPrintln("MQTT: Subscribed to " + cmdTopic);
+    log("MQTT: Subscribed to " + cmdTopic);
 
     // Subscribe to configured trigger topics
     for (int i = 0; i < appConfig.mqttTriggerCount; i++) {
       if (appConfig.mqttTriggers[i].enabled && strlen(appConfig.mqttTriggers[i].topic) > 0) {
         mqtt.subscribe(appConfig.mqttTriggers[i].topic);
-        logPrintln("MQTT: Subscribed to trigger: " + String(appConfig.mqttTriggers[i].topic));
+        log("MQTT: Subscribed to trigger: " + String(appConfig.mqttTriggers[i].topic));
       }
     }
 
@@ -146,7 +146,7 @@ void mqttReconnect() {
       case 5: errorMsg = "MQTT_CONNECT_UNAUTHORIZED"; break;
       default: errorMsg = "UNKNOWN"; break;
     }
-    logPrintln("MQTT: Failed, rc=" + String(state) + " (" + errorMsg + ")");
+    log("MQTT: Failed, rc=" + String(state) + " (" + errorMsg + ")");
   }
 }
 
@@ -165,7 +165,7 @@ void publishDoorbellState(bool ringing) {
 
   String topic = String(appConfig.mqttTopic) + "/doorbell";
   mqtt.publish(topic.c_str(), payload.c_str(), true);
-  logPrintln("MQTT: Published doorbell state: " + payload);
+  log("MQTT: Published doorbell state: " + payload);
 }
 
 // Helper to check if a JSON value matches the trigger value string
@@ -199,12 +199,12 @@ static bool valueMatches(JsonVariant value, const char* triggerValue) {
 static void executeTriggerAction(MqttTriggerAction action, const char* label) {
   switch (action) {
     case MQTT_ACTION_RING:
-      logPrintln("MQTT Trigger: Executing RING action (" + String(label) + ")");
+      log("MQTT Trigger: Executing RING action (" + String(label) + ")");
       unifiTriggerRing();
       break;
 
     case MQTT_ACTION_DISMISS:
-      logPrintln("MQTT Trigger: Executing DISMISS action (" + String(label) + ")");
+      log("MQTT Trigger: Executing DISMISS action (" + String(label) + ")");
       if (activeRequestId.length() > 0 && activeDeviceId.length() > 0) {
         if (unifiDismissCall(activeDeviceId, activeRequestId)) {
           activeRequestId = "";
@@ -213,7 +213,7 @@ static void executeTriggerAction(MqttTriggerAction action, const char* label) {
           publishDoorbellState(false);
         }
       } else {
-        logPrintln("MQTT Trigger: No active call to dismiss");
+        log("MQTT Trigger: No active call to dismiss");
       }
       break;
 
@@ -228,7 +228,7 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
     message += (char)payload[i];
   }
 
-  logPrintln("MQTT: Received [" + String(topic) + "]: " + message);
+  log("MQTT: Received [" + String(topic) + "]: " + message);
 
   String topicStr = String(topic);
 
@@ -248,7 +248,7 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
             publishDoorbellState(false);
           }
         } else {
-          logPrintln("MQTT: No active doorbell call to dismiss");
+          log("MQTT: No active doorbell call to dismiss");
         }
       }
       else if (action == "ring") {
@@ -269,20 +269,20 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, message);
     if (error) {
-      logPrintln("MQTT Trigger: Failed to parse JSON: " + String(error.c_str()));
+      log("MQTT Trigger: Failed to parse JSON: " + String(error.c_str()));
       continue;
     }
 
     // Get the JSON field value
     JsonVariant fieldValue = doc[trigger.jsonField];
     if (fieldValue.isNull()) {
-      logPrintln("MQTT Trigger: Field '" + String(trigger.jsonField) + "' not found");
+      log("MQTT Trigger: Field '" + String(trigger.jsonField) + "' not found");
       continue;
     }
 
     // Check if value matches
     if (valueMatches(fieldValue, trigger.triggerValue)) {
-      logPrintln("MQTT Trigger: Match! Field '" + String(trigger.jsonField) +
+      log("MQTT Trigger: Match! Field '" + String(trigger.jsonField) +
                  "' = '" + String(trigger.triggerValue) + "'");
       executeTriggerAction(trigger.action, trigger.label);
     }

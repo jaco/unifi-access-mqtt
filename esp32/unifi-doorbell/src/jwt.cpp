@@ -86,7 +86,7 @@ void generateJwtSecret() {
         jwtSecret[i] = (uint8_t)esp_random();
     }
     secretInitialized = true;
-    logPrintln("JWT: Generated new secret");
+    log("JWT: Generated new secret");
 }
 
 String createJwtToken(const String& username) {

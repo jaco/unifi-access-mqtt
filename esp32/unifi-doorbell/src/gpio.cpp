@@ -36,12 +36,12 @@ void setupGpio() {
             gpioStates[i].lastRawState = LOW;
         }
 
-        logPrintln("GPIO: Pin " + String(pin) + " configured as " +
+        log("GPIO: Pin " + String(pin) + " configured as " +
                    String(appConfig.gpios[i].label) +
                    " (pull-" + (pullMode == GPIO_PULL_UP ? "up" : "down") + ")");
     }
 
-    logPrintln("GPIO: " + String(appConfig.gpioCount) + " pins configured");
+    log("GPIO: " + String(appConfig.gpioCount) + " pins configured");
 }
 
 void checkGpioTriggers() {
@@ -91,14 +91,14 @@ void checkGpioTriggers() {
             // Execute action based on type
             switch (config.action) {
                 case GPIO_ACTION_RING_BUTTON:
-                    logPrintln("GPIO: Ring triggered (" + String(config.label) + ")");
+                    log("GPIO: Ring triggered (" + String(config.label) + ")");
                     unifiTriggerRing();
                     websocketLoop();  // Service WebSocket after blocking API call
                     break;
 
                 case GPIO_ACTION_DOOR_CONTACT:
                     if (activeRequestId.length() > 0 && activeDeviceId.length() > 0) {
-                        logPrintln("GPIO: Dismiss triggered (" + String(config.label) + ")");
+                        log("GPIO: Dismiss triggered (" + String(config.label) + ")");
                         if (unifiDismissCall(activeDeviceId, activeRequestId)) {
                             activeRequestId = "";
                             activeDeviceId = "";
@@ -107,12 +107,12 @@ void checkGpioTriggers() {
                             websocketLoop();  // Service WebSocket after blocking API call
                         }
                     } else {
-                        logPrintln("GPIO: Door contact triggered but no active call (" + String(config.label) + ")");
+                        log("GPIO: Door contact triggered but no active call (" + String(config.label) + ")");
                     }
                     break;
 
                 case GPIO_ACTION_GENERIC:
-                    logPrintln("GPIO: Generic trigger (" + String(config.label) + ")");
+                    log("GPIO: Generic trigger (" + String(config.label) + ")");
                     publishGpioState(i, true);
                     break;
 
@@ -158,5 +158,5 @@ void publishGpioState(int index, bool active) {
     serializeJson(doc, payload);
 
     mqtt.publish(topic.c_str(), payload.c_str(), true);  // Retained
-    logPrintln("MQTT: Published GPIO state: " + topic + " = " + (active ? "active" : "idle"));
+    log("MQTT: Published GPIO state: " + topic + " = " + (active ? "active" : "idle"));
 }

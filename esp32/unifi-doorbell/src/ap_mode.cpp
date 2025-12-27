@@ -43,7 +43,7 @@ String getApSsid() {
 void setupApMode() {
     if (apModeActive) return;
 
-    logPrintln("AP Mode: Starting...");
+    log("AP Mode: Starting...");
 
     // Configure WiFi as Access Point
     WiFi.mode(WIFI_AP);
@@ -53,23 +53,23 @@ void setupApMode() {
     delay(100);
 
     IPAddress apIP = WiFi.softAPIP();
-    logPrintln("AP Mode: SSID: " + getApSsid());
-    logPrintln("AP Mode: Password: " + String(AP_PASSWORD));
-    logPrintln("AP Mode: IP: " + apIP.toString());
+    log("AP Mode: SSID: " + getApSsid());
+    log("AP Mode: Password: " + String(AP_PASSWORD));
+    log("AP Mode: IP: " + apIP.toString());
 
     // Start DNS server for captive portal
     // Redirect all DNS requests to our IP
     dnsServer.start(DNS_PORT, "*", apIP);
-    logPrintln("AP Mode: DNS server started (captive portal)");
+    log("AP Mode: DNS server started (captive portal)");
 
     // Start mDNS responder
     if (MDNS.begin("doorbell")) {
         MDNS.addService("http", "tcp", 80);
-        logPrintln("AP Mode: mDNS started: doorbell.local");
+        log("AP Mode: mDNS started: doorbell.local");
     }
 
     apModeActive = true;
-    logPrintln("AP Mode: Ready for configuration at http://" + apIP.toString());
+    log("AP Mode: Ready for configuration at http://" + apIP.toString());
 }
 
 void apModeLoop() {
@@ -82,7 +82,7 @@ void apModeLoop() {
 void stopApMode() {
     if (!apModeActive) return;
 
-    logPrintln("AP Mode: Stopping...");
+    log("AP Mode: Stopping...");
 
     dnsServer.stop();
     MDNS.end();
@@ -90,7 +90,7 @@ void stopApMode() {
     WiFi.mode(WIFI_STA);
 
     apModeActive = false;
-    logPrintln("AP Mode: Stopped");
+    log("AP Mode: Stopped");
 }
 
 #else
@@ -109,7 +109,7 @@ String getApSsid() {
 
 void setupApMode() {
     // Not available on Ethernet
-    logPrintln("AP Mode: Not available on Ethernet builds");
+    log("AP Mode: Not available on Ethernet builds");
 }
 
 void apModeLoop() {

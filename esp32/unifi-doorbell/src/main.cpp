@@ -81,10 +81,10 @@ void setup() {
 
   // Check if we should start in AP mode (unconfigured WiFi device)
   if (shouldStartApMode()) {
-    logPrintln("Starting in AP mode for initial configuration...");
+    log("Starting in AP mode for initial configuration...");
     setupApMode();
     setupWebServer();
-    logPrintln("Setup complete - waiting for configuration via web UI");
+    log("Setup complete - waiting for configuration via web UI");
     return;
   }
 
@@ -102,7 +102,7 @@ void setup() {
     attempts++;
   }
   if (now_time > 1700000000) {
-    logPrintln("NTP time synced: " + String((long)now_time));
+    log("NTP time synced: " + String((long)now_time));
   } else {
     Serial.println("NTP sync failed, using fallback time");
   }
@@ -113,7 +113,7 @@ void setup() {
   // Initialize Web Server
   setupWebServer();
 
-  logPrintln("Setup complete");
+  log("Setup complete");
   printSystemStatus();
 }
 
@@ -171,13 +171,13 @@ void loop() {
       incrementWsReconnectFailures();
 
       if (getWsReconnectFailures() >= WS_MAX_FAILURES) {
-        logPrintln("WebSocket: Too many failures, forcing re-login...");
+        log("WebSocket: Too many failures, forcing re-login...");
         disconnectWebSocket();
         isLoggedIn = false;
         resetWsReconnectFailures();
         lastLoginAttempt = 0;
       } else {
-        logPrintln("WebSocket: Reconnect attempt " + String(getWsReconnectFailures()));
+        log("WebSocket: Reconnect attempt " + String(getWsReconnectFailures()));
         connectWebSocket();
       }
     }
@@ -211,7 +211,7 @@ void loop() {
     activeDeviceId = "";
     activeConnectedUahId = "";
     activeCallTime = 0;
-    logPrintln("Cleared stale doorbell state");
+    log("Cleared stale doorbell state");
     publishDoorbellState(false);
   }
 

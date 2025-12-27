@@ -207,17 +207,17 @@ bool unifiLogin() {
   unifiLastError = "";  // Clear previous error
 
   if (!hasUnifiCredentials()) {
-    logPrintln("UniFi: No credentials configured");
+    log("UniFi: No credentials configured");
     return false;
   }
 
-  logPrintln("UniFi: Logging in to " + String(appConfig.unifiHost) + "...");
+  log("UniFi: Logging in to " + String(appConfig.unifiHost) + "...");
 
   WiFiClientSecure client;
   client.setInsecure();
 
   if (!client.connect(appConfig.unifiHost, 443)) {
-    logPrintln("UniFi: Connection failed");
+    log("UniFi: Connection failed");
     unifiLastError = "Connection failed";
     return false;
   }
@@ -230,14 +230,14 @@ bool unifiLogin() {
 
   String response = readHttpResponse(client);
   csrfToken = extractHeader(response, "X-Csrf-Token");
-  logPrintln("UniFi: Got initial CSRF token");
+  log("UniFi: Got initial CSRF token");
 
   client.stop();
   delay(100);
 
   // Step 2: Login
   if (!client.connect(appConfig.unifiHost, 443)) {
-    logPrintln("UniFi: Reconnection failed");
+    log("UniFi: Reconnection failed");
     unifiLastError = "Reconnection failed";
     return false;
   }
@@ -279,20 +279,20 @@ bool unifiLogin() {
   client.stop();
 
   if (sessionCookie.length() > 0) {
-    logPrintln("UniFi: Login successful");
+    log("UniFi: Login successful");
     userId = appConfig.unifiUsername;
     userName = appConfig.unifiUsername;
     isLoggedIn = true;
     return true;
   }
 
-  logPrintln("UniFi: Login failed - no session cookie");
+  log("UniFi: Login failed - no session cookie");
   unifiLastError = "Login failed";
   return false;
 }
 
 bool unifiBootstrap() {
-  logPrintln("UniFi: Resolving device IDs...");
+  log("UniFi: Resolving device IDs...");
 
   // Reset viewer count for re-bootstrap
   resolvedViewerCount = 0;
@@ -302,10 +302,10 @@ bool unifiBootstrap() {
 
   if (configuredId.indexOf(":") >= 0 || configuredId.indexOf("-") >= 0) {
     resolvedDoorbellDeviceId = normalizeMAC(configuredId);
-    logPrintln("UniFi: Doorbell MAC " + configuredId + " -> ID " + resolvedDoorbellDeviceId);
+    log("UniFi: Doorbell MAC " + configuredId + " -> ID " + resolvedDoorbellDeviceId);
   } else {
     resolvedDoorbellDeviceId = configuredId;
-    logPrintln("UniFi: Doorbell ID: " + resolvedDoorbellDeviceId);
+    log("UniFi: Doorbell ID: " + resolvedDoorbellDeviceId);
   }
 
   // Resolve viewer IDs from config
@@ -315,24 +315,24 @@ bool unifiBootstrap() {
 
     if (viewerId.indexOf(":") >= 0 || viewerId.indexOf("-") >= 0) {
       resolvedViewerIds[resolvedViewerCount++] = normalizeMAC(viewerId);
-      logPrintln("UniFi: Viewer MAC " + viewerId + " -> ID " + resolvedViewerIds[resolvedViewerCount-1]);
+      log("UniFi: Viewer MAC " + viewerId + " -> ID " + resolvedViewerIds[resolvedViewerCount-1]);
     } else {
       resolvedViewerIds[resolvedViewerCount++] = viewerId;
-      logPrintln("UniFi: Viewer ID: " + viewerId);
+      log("UniFi: Viewer ID: " + viewerId);
     }
   }
 
-  logPrintln("UniFi: Bootstrap complete - " + String(resolvedViewerCount) + " viewers configured");
+  log("UniFi: Bootstrap complete - " + String(resolvedViewerCount) + " viewers configured");
   return true;
 }
 
 bool unifiDismissCall(const String& deviceId, const String& requestId) {
   if (!isLoggedIn || requestId.length() == 0) {
-    logPrintln("UniFi: Cannot dismiss - not logged in or no request ID");
+    log("UniFi: Cannot dismiss - not logged in or no request ID");
     return false;
   }
 
-  logPrintln("UniFi: Dismissing doorbell call: " + requestId);
+  log("UniFi: Dismissing doorbell call: " + requestId);
 
   JsonDocument doc;
   doc["device_id"] = deviceId;
@@ -351,7 +351,7 @@ bool unifiDismissCall(const String& deviceId, const String& requestId) {
   apiClient.setTimeout(10000);
 
   if (!apiClient.connect(appConfig.unifiHost, 443)) {
-    logPrintln("UniFi: Connection failed");
+    log("UniFi: Connection failed");
     return false;
   }
 
@@ -382,9 +382,9 @@ bool unifiDismissCall(const String& deviceId, const String& requestId) {
 
   bool success = (statusCode >= 200 && statusCode < 300);
   if (success) {
-    logPrintln("UniFi: Doorbell call dismissed");
+    log("UniFi: Doorbell call dismissed");
   } else {
-    logPrintln("UniFi: Dismiss failed, status: " + String(statusCode));
+    log("UniFi: Dismiss failed, status: " + String(statusCode));
   }
 
   return success;
@@ -397,10 +397,10 @@ static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
   apiClient.setInsecure();
   apiClient.setTimeout(30000);
 
-  logPrintln("UniFi: Heap before fetch: " + String(ESP.getFreeHeap()));
+  log("UniFi: Heap before fetch: " + String(ESP.getFreeHeap()));
 
   if (!apiClient.connect(appConfig.unifiHost, 443)) {
-    logPrintln("UniFi: Connection failed");
+    log("UniFi: Connection failed");
     return false;
   }
 
@@ -421,7 +421,7 @@ static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
   // Read status line
   if (apiClient.connected()) {
     String statusLine = apiClient.readStringUntil('\n');
-    logPrintln("UniFi: Status: " + statusLine);
+    log("UniFi: Status: " + statusLine);
     int spaceIdx = statusLine.indexOf(' ');
     if (spaceIdx > 0) {
       int endIdx = statusLine.indexOf(' ', spaceIdx + 1);
@@ -446,7 +446,7 @@ static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
 
   if (httpStatus >= 400) {
     apiClient.stop();
-    logPrintln("UniFi: HTTP error " + String(httpStatus));
+    log("UniFi: HTTP error " + String(httpStatus));
     return false;
   }
 
@@ -461,8 +461,8 @@ static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
   filter["data"][0]["floors"][0]["doors"][0]["device_groups"][0][0]["name"] = true;
   filter["data"][0]["floors"][0]["doors"][0]["device_groups"][0][0]["mac"] = true;
 
-  logPrintln("UniFi: Parsing stream with filter (chunked=" + String(isChunked ? "yes" : "no") + ")");
-  logPrintln("UniFi: Heap before parse: " + String(ESP.getFreeHeap()));
+  log("UniFi: Parsing stream with filter (chunked=" + String(isChunked ? "yes" : "no") + ")");
+  log("UniFi: Heap before parse: " + String(ESP.getFreeHeap()));
 
   // Wrap the client in ChunkedStream to handle chunked transfer encoding
   ChunkedStream stream(apiClient, isChunked);
@@ -480,12 +480,12 @@ static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
   bool clientConnected = apiClient.connected();
   apiClient.stop();
 
-  logPrintln("UniFi: Heap after parse: " + String(ESP.getFreeHeap()));
-  logPrintln("UniFi: Stream finished: " + String(streamFinished ? "yes" : "no") +
+  log("UniFi: Heap after parse: " + String(ESP.getFreeHeap()));
+  log("UniFi: Stream finished: " + String(streamFinished ? "yes" : "no") +
              ", client connected: " + String(clientConnected ? "yes" : "no"));
 
   if (error) {
-    logPrintln("UniFi: Parse error: " + String(error.c_str()));
+    log("UniFi: Parse error: " + String(error.c_str()));
 
     // Debug: show what was parsed
     String partial;
@@ -493,7 +493,7 @@ static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
     if (partial.length() > 200) {
       partial = partial.substring(0, 200) + "...";
     }
-    logPrintln("UniFi: Partial data: " + partial);
+    log("UniFi: Partial data: " + partial);
 
     return false;
   }
@@ -554,27 +554,27 @@ static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
     }
   }
 
-  logPrintln("UniFi: Found " + String(deviceCount) + " devices, " + String(readers.size()) + " readers");
+  log("UniFi: Found " + String(deviceCount) + " devices, " + String(readers.size()) + " readers");
 
   return true;
 }
 
 String unifiGetTopology() {
   if (!isLoggedIn) {
-    logPrintln("UniFi: Cannot get topology - not logged in");
+    log("UniFi: Cannot get topology - not logged in");
     return "{\"success\":false,\"message\":\"Not logged in\"}";
   }
 
   const int maxRetries = 3;
 
   for (int attempt = 1; attempt <= maxRetries; attempt++) {
-    logPrintln("UniFi: Fetching device topology (attempt " + String(attempt) + "/" + String(maxRetries) + ")...");
+    log("UniFi: Fetching device topology (attempt " + String(attempt) + "/" + String(maxRetries) + ")...");
 
     JsonDocument outputDoc;
     bool success = fetchTopologyStreaming(outputDoc);
 
     if (!success) {
-      logPrintln("UniFi: Attempt " + String(attempt) + " failed");
+      log("UniFi: Attempt " + String(attempt) + " failed");
       if (attempt < maxRetries) {
         delay(1000);  // Wait before retry
         continue;
@@ -583,7 +583,7 @@ String unifiGetTopology() {
     }
 
     // Success - serialize and return
-    logPrintln("UniFi: Successfully fetched topology on attempt " + String(attempt));
+    log("UniFi: Successfully fetched topology on attempt " + String(attempt));
 
     String output;
     serializeJson(outputDoc, output);
@@ -596,7 +596,7 @@ String unifiGetTopology() {
 
 bool unifiTriggerRing() {
   if (!isLoggedIn) {
-    logPrintln("UniFi: Cannot trigger - not logged in");
+    log("UniFi: Cannot trigger - not logged in");
     return false;
   }
 
@@ -605,7 +605,7 @@ bool unifiTriggerRing() {
     deviceId = appConfig.doorbellDeviceId;
   }
 
-  logPrintln("UniFi: Triggering doorbell ring on device: " + deviceId);
+  log("UniFi: Triggering doorbell ring on device: " + deviceId);
 
   String requestId = generateRandomString(32);
   String roomId = "PR-" + generateUUID();
@@ -633,7 +633,7 @@ bool unifiTriggerRing() {
   String body;
   serializeJson(doc, body);
 
-  logPrintln("UniFi: Viewers in notify list: " + String(resolvedViewerCount));
+  log("UniFi: Viewers in notify list: " + String(resolvedViewerCount));
 
   String path = "/proxy/access/api/v2/device/" + deviceId + "/remote_call";
 
@@ -642,7 +642,7 @@ bool unifiTriggerRing() {
   apiClient.setTimeout(10000);
 
   if (!apiClient.connect(appConfig.unifiHost, 443)) {
-    logPrintln("UniFi: Connection failed");
+    log("UniFi: Connection failed");
     return false;
   }
 
@@ -673,9 +673,9 @@ bool unifiTriggerRing() {
 
   bool success = (statusCode >= 200 && statusCode < 300);
   if (success) {
-    logPrintln("UniFi: Doorbell ring triggered");
+    log("UniFi: Doorbell ring triggered");
   } else {
-    logPrintln("UniFi: Trigger failed, status: " + String(statusCode));
+    log("UniFi: Trigger failed, status: " + String(statusCode));
   }
 
   return success;
