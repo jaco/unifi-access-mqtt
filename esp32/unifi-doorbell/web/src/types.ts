@@ -87,3 +87,28 @@ export interface TopologyResponse {
 }
 
 export type Tab = 'status' | 'setup' | 'settings' | 'system'
+
+export interface VersionInfo {
+  version: string
+  board: string
+}
+
+export interface FirmwareManifest {
+  name: string
+  version: string
+  builds: Array<{
+    chipFamily: string
+    parts: Array<{
+      path: string
+      offset: number
+    }>
+  }>
+}
+
+export interface UpdateInfo {
+  available: boolean
+  currentVersion: string
+  latestVersion: string
+  board: string
+  manifestUrl?: string
+}

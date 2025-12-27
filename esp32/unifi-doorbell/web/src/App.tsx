@@ -2,6 +2,7 @@ import { useState, useEffect } from 'preact/hooks'
 import type { Tab } from './types'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useConfig } from './hooks/useConfig'
+import { useUpdateChecker } from './hooks/useUpdateChecker'
 import api from './api/api'
 
 import { Login } from './components/Login'
@@ -19,7 +20,6 @@ type AppState = 'loading' | 'ap-setup' | 'login' | 'app'
 export function App() {
   const [appState, setAppState] = useState<AppState>('loading')
   const [activeTab, setActiveTab] = useState<Tab>('status')
-  const [version, setVersion] = useState('--')
 
   const {
     connected, status, ringing, logs,
@@ -31,6 +31,10 @@ export function App() {
     addGpio, removeGpio, updateGpio,
     addMqttTrigger, removeMqttTrigger, updateMqttTrigger
   } = useConfig()
+
+  const {
+    versionInfo, updateInfo, checking: checkingUpdate, checkForUpdate
+  } = useUpdateChecker()
 
   useEffect(() => {
     checkMode()
@@ -66,12 +70,7 @@ export function App() {
     setAppState('app')
     connect()
     loadConfig()
-    try {
-      const versionData = await api.getVersion()
-      setVersion(`FW: ${versionData.version ?? '--'} | UI: 1.0.0`)
-    } catch {
-      setVersion('--')
-    }
+    checkForUpdate()
   }
 
   const handleLogout = async () => {
@@ -131,7 +130,15 @@ export function App() {
         )}
 
         {activeTab === 'system' && (
-          <SystemTab version={version} logs={logs} onClearLogs={clearLogs} />
+          <SystemTab
+            version={versionInfo?.version ?? '--'}
+            board={versionInfo?.board ?? 'unknown'}
+            logs={logs}
+            onClearLogs={clearLogs}
+            updateInfo={updateInfo}
+            onCheckUpdate={checkForUpdate}
+            checkingUpdate={checkingUpdate}
+          />
         )}
       </main>
     </div>

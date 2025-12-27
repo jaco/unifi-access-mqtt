@@ -1,4 +1,6 @@
-import type { Config, TopologyResponse } from '../types'
+import type { Config, TopologyResponse, VersionInfo, FirmwareManifest } from '../types'
+
+const GITHUB_PAGES_BASE = 'https://mqtt-home.github.io/unifi-access-mqtt'
 
 const api = {
   async getMode(): Promise<{ apMode: boolean }> {
@@ -24,9 +26,19 @@ const api = {
     await fetch('/api/auth/logout', { method: 'POST' })
   },
 
-  async getVersion(): Promise<{ version?: string }> {
+  async getVersion(): Promise<VersionInfo> {
     const res = await fetch('/api/version')
     return res.json()
+  },
+
+  async getLatestManifest(board: string): Promise<FirmwareManifest | null> {
+    try {
+      const res = await fetch(`${GITHUB_PAGES_BASE}/manifest-${board}.json`)
+      if (!res.ok) return null
+      return res.json()
+    } catch {
+      return null
+    }
   },
 
   async getConfig(): Promise<Config> {

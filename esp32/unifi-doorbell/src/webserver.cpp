@@ -28,6 +28,11 @@
 #define FIRMWARE_VERSION "dev"
 #endif
 
+// Board type - defined by platformio.ini build flags
+#ifndef BOARD_TYPE
+#define BOARD_TYPE "unknown"
+#endif
+
 // Web server on port 80
 static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
@@ -327,9 +332,10 @@ void setupWebServer() {
         request->send(200, "application/json", json);
     });
 
-    // API: Get firmware version
+    // API: Get firmware version and board type
     server.on("/api/version", HTTP_GET, [](AsyncWebServerRequest* request) {
-        request->send(200, "application/json", "{\"version\":\"" FIRMWARE_VERSION "\"}");
+        request->send(200, "application/json",
+            "{\"version\":\"" FIRMWARE_VERSION "\",\"board\":\"" BOARD_TYPE "\"}");
     });
 
     // API: Get certificate
