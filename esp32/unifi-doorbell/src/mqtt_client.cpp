@@ -31,23 +31,28 @@ static String getLocalIP() {
 #endif
 }
 
-// Publish bridge status information
-static void publishBridgeInfo() {
+// Publish bridge status information (called when fully connected to UniFi)
+void publishBridgeInfo() {
   if (!mqtt.connected()) return;
 
   String baseTopic = String(appConfig.mqttTopic) + "/bridge";
 
-  // Publish online state (retained)
-  mqtt.publish((baseTopic + "/state").c_str(), "online", true);
-
-  // Publish version (retained)
-  mqtt.publish((baseTopic + "/version").c_str(), FIRMWARE_VERSION, true);
-
-  // Publish IP address (retained)
+  // Build topic strings (must persist during publish)
+  String stateTopic = baseTopic + "/state";
+  String versionTopic = baseTopic + "/version";
+  String ipTopic = baseTopic + "/ip";
   String ip = getLocalIP();
-  mqtt.publish((baseTopic + "/ip").c_str(), ip.c_str(), true);
 
-  log("MQTT: Published bridge info (state=online, version=" + String(FIRMWARE_VERSION) + ", ip=" + ip + ")");
+  // Publish online state (retained)
+  bool stateOk = mqtt.publish(stateTopic.c_str(), "online", true);
+  bool versionOk = mqtt.publish(versionTopic.c_str(), FIRMWARE_VERSION, true);
+  bool ipOk = mqtt.publish(ipTopic.c_str(), ip.c_str(), true);
+
+  if (stateOk && versionOk && ipOk) {
+    log("MQTT: Published bridge info (state=online, version=" + String(FIRMWARE_VERSION) + ", ip=" + ip + ")");
+  } else {
+    log("MQTT: Failed to publish bridge info (state=" + String(stateOk) + ", version=" + String(versionOk) + ", ip=" + String(ipOk) + ")");
+  }
 }
 
 static void mqttCallback(char* topic, byte* payload, unsigned int length);
@@ -71,7 +76,8 @@ void setupMqtt() {
   mqtt.setServer(appConfig.mqttServer, appConfig.mqttPort);
   mqtt.setCallback(mqttCallback);
   mqtt.setBufferSize(1024);
-  mqtt.setSocketTimeout(3);  // 3 second timeout
+  mqtt.setKeepAlive(60);     // 60 second keepalive (default 15 is too short)
+  mqtt.setSocketTimeout(10); // 10 second socket timeout
   log("MQTT: Configured");
 }
 
@@ -103,19 +109,16 @@ void mqttReconnect() {
 
   bool connected = false;
   if (appConfig.mqttAuthEnabled && strlen(appConfig.mqttUsername) > 0) {
-    log("MQTT: Using auth: " + String(appConfig.mqttUsername));
+    logDebug("MQTT: Using auth: " + String(appConfig.mqttUsername));
     connected = mqtt.connect(clientId.c_str(), appConfig.mqttUsername, appConfig.mqttPassword,
                              willTopic.c_str(), 0, true, willMessage);
   } else {
-    log("MQTT: No auth");
+    logDebug("MQTT: No auth");
     connected = mqtt.connect(clientId.c_str(), willTopic.c_str(), 0, true, willMessage);
   }
 
   if (connected) {
     log("MQTT: Connected");
-
-    // Publish bridge info (state=online, version, ip)
-    publishBridgeInfo();
 
     // Subscribe to command topic
     String cmdTopic = String(appConfig.mqttTopic) + "/set";

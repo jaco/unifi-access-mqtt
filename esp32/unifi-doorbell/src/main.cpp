@@ -57,6 +57,7 @@
 static unsigned long lastLoginAttempt = 0;
 static unsigned long lastWsReconnect = 0;
 static unsigned long lastStatusReport = 0;
+static bool bridgeInfoPublished = false;  // Track if we published online state
 
 // =============================================================================
 // Setup
@@ -150,8 +151,10 @@ void loop() {
   if (!isLoggedIn && (now - lastLoginAttempt > LOGIN_RETRY_INTERVAL)) {
     lastLoginAttempt = now;
     if (unifiLogin()) {
+      mqttLoop();  // Keep MQTT alive after blocking login
       unifiBootstrap();
       connectWebSocket();
+      mqttLoop();  // Keep MQTT alive after blocking WS connect
       // Use fresh millis() since login took time, and reset failure counter
       lastWsReconnect = millis();
       resetWsReconnectFailures();
@@ -163,10 +166,17 @@ void loop() {
     websocketLoop();
     sendWsPing();
 
+    // Publish bridge info once WebSocket is connected
+    if (wsConnected && !bridgeInfoPublished) {
+      bridgeInfoPublished = true;
+      publishBridgeInfo();
+    }
+
     // Reconnect WebSocket if needed
     // Use fresh millis() since login may have taken time
     unsigned long currentMs = millis();
     if (!wsConnected && (currentMs - lastWsReconnect > WS_RETRY_INTERVAL)) {
+      bridgeInfoPublished = false;  // Reset so we republish after reconnect
       lastWsReconnect = currentMs;
       incrementWsReconnectFailures();
 
@@ -174,11 +184,13 @@ void loop() {
         log("WebSocket: Too many failures, forcing re-login...");
         disconnectWebSocket();
         isLoggedIn = false;
+        bridgeInfoPublished = false;  // Reset so we republish after re-login
         resetWsReconnectFailures();
         lastLoginAttempt = 0;
       } else {
         log("WebSocket: Reconnect attempt " + String(getWsReconnectFailures()));
         connectWebSocket();
+        mqttLoop();  // Keep MQTT alive after blocking WS connect
       }
     }
   }
