@@ -213,7 +213,7 @@ void processWebSocketMessage() {
   }
   pendingMessageProcess = false;
 
-  log("WebSocket: Processing doorbell event");
+  log("WebSocket: Processing event");
   handleWebSocketMessage(pendingMessage);
 }
 

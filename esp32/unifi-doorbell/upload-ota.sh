@@ -145,7 +145,7 @@ if [ "$UPLOAD_FILESYSTEM" = true ] && [ ! -f "$FILESYSTEM_FILE" ]; then
     exit 1
 fi
 
-# Check if host is reachable
+# Check if host is reachable and resolve IP
 echo -n "Checking connectivity to $HOST... "
 if ! ping -c 1 -W 2 "$HOST" > /dev/null 2>&1; then
     echo -e "${RED}Failed${NC}"
@@ -158,7 +158,16 @@ if ! ping -c 1 -W 2 "$HOST" > /dev/null 2>&1; then
     echo "Find device IP via serial monitor or router DHCP list."
     exit 1
 fi
-echo -e "${GREEN}OK${NC}"
+
+# Resolve and cache IP address to avoid mDNS issues after reboot
+RESOLVED_IP=$(ping -c 1 "$HOST" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+if [ -n "$RESOLVED_IP" ]; then
+    echo -e "${GREEN}OK${NC} ($RESOLVED_IP)"
+    # Use IP for all subsequent requests to avoid mDNS issues
+    HOST="$RESOLVED_IP"
+else
+    echo -e "${GREEN}OK${NC}"
+fi
 
 # Login and get auth token
 echo -n "Logging in... "
@@ -195,20 +204,54 @@ if [ "$UPLOAD_FILESYSTEM" = true ]; then
     echo -e "${CYAN}Uploading filesystem ($FILESIZE)...${NC}"
 
     RESPONSE_FILE=$(mktemp)
-    # Device reboots after successful upload - curl will get connection reset, which is expected
-    # Redirect stderr to hide the expected "connection reset" message
+    PROGRESS_FILE=$(mktemp)
+
+    # Start upload in background - progress to file, show it with tail
     curl -X POST "http://$HOST/api/ota/filesystem" \
         -b "$COOKIE_FILE" \
         -F "file=@$FILESYSTEM_FILE" \
         -o "$RESPONSE_FILE" \
-        --max-time 120 \
+        -w "\n%{http_code}" \
         --connect-timeout 10 \
-        --progress-bar 2>/dev/null || true
+        -# \
+        2>"$PROGRESS_FILE" &
+    CURL_PID=$!
 
+    # Disable exit-on-error for curl handling (curl may be killed/timeout)
+    set +e
+
+    # Show progress and detect 100% completion
+    UPLOAD_COMPLETE=false
+    while kill -0 $CURL_PID 2>/dev/null; do
+        # Show current progress
+        PROGRESS=$(tail -c 100 "$PROGRESS_FILE" 2>/dev/null || echo "")
+        printf "\r%s" "$PROGRESS"
+
+        # Check if upload reached 100%
+        if echo "$PROGRESS" | grep -q "100"; then
+            if [ "$UPLOAD_COMPLETE" = false ]; then
+                UPLOAD_COMPLETE=true
+                echo ""
+                echo -n "Upload complete, waiting for response..."
+                # Wait 3 more seconds for response, then kill curl
+                sleep 3
+                kill $CURL_PID 2>/dev/null
+                wait $CURL_PID 2>/dev/null
+                break
+            fi
+        fi
+        sleep 0.2
+    done
+    wait $CURL_PID 2>/dev/null
+
+    # Re-enable exit-on-error
+    set -e
+
+    echo ""
     RESPONSE=$(cat "$RESPONSE_FILE" 2>/dev/null || echo "")
-    rm -f "$RESPONSE_FILE"
+    rm -f "$RESPONSE_FILE" "$PROGRESS_FILE"
 
-    # Check for success or connection reset (device rebooted)
+    # Check response - extract HTTP code from end of response (added by -w)
     if echo "$RESPONSE" | grep -q '"success":true'; then
         echo -e "${GREEN}Filesystem uploaded successfully!${NC}"
     elif echo "$RESPONSE" | grep -q "Not Found"; then
@@ -216,40 +259,60 @@ if [ "$UPLOAD_FILESYSTEM" = true ]; then
         echo "The device needs firmware update first. Run:"
         echo "  ./upload-ota.sh --firmware"
         exit 1
-    else
-        # Empty or error response likely means device rebooted (success)
+    elif echo "$RESPONSE" | grep -q "200"; then
         echo -e "${GREEN}Filesystem uploaded successfully!${NC}"
+    elif [ "$UPLOAD_COMPLETE" = true ]; then
+        # Upload completed but no response = device rebooted (expected with old firmware)
+        echo -e "${GREEN}Filesystem uploaded (device rebooted)${NC}"
+    else
+        echo -e "${RED}Filesystem upload may have failed${NC}"
+        echo "Response: $RESPONSE"
     fi
 
     if [ "$UPLOAD_FIRMWARE" = true ]; then
         echo -n "Waiting for device to reboot"
-        for i in {1..10}; do
+        for i in {1..5}; do
             sleep 1
             echo -n "."
         done
         echo ""
 
-        # Re-login after reboot (with retries, silently)
-        echo -n "Re-authenticating... "
-        for i in {1..10}; do
+        # Re-login after reboot (with retries)
+        echo -n "Re-authenticating "
+        HTTP_CODE=""
+        CURL_ERR=""
+        for i in {1..20}; do
+            CURL_ERR=$(mktemp)
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -c "$COOKIE_FILE" -X POST "http://$HOST/api/auth/login" \
                 -H "Content-Type: application/json" \
                 -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
-                --connect-timeout 5 2>/dev/null) || true
+                --connect-timeout 2 \
+                --max-time 3 2>"$CURL_ERR") || true
+
+            ERR_MSG=$(cat "$CURL_ERR" 2>/dev/null | head -1)
+            rm -f "$CURL_ERR"
 
             if [ "$HTTP_CODE" = "200" ]; then
                 break
             fi
-            sleep 2
+            # Show what we're getting for debugging
+            if [ -n "$ERR_MSG" ]; then
+                echo ""
+                echo "  curl error: $ERR_MSG"
+                echo -n "  Retrying "
+            else
+                echo -n "[$HTTP_CODE]"
+            fi
+            sleep 1
         done
 
         if [ "$HTTP_CODE" != "200" ]; then
-            echo -e "${RED}Failed${NC}"
+            echo -e " ${RED}Failed (last: $HTTP_CODE)${NC}"
             echo "Device may still be rebooting. Try firmware upload manually:"
             echo "  ./upload-ota.sh --firmware"
             exit 1
         fi
-        echo -e "${GREEN}OK${NC}"
+        echo -e " ${GREEN}OK${NC}"
         echo ""
     fi
 fi
@@ -260,27 +323,64 @@ if [ "$UPLOAD_FIRMWARE" = true ]; then
     echo -e "${CYAN}Uploading firmware ($FILESIZE)...${NC}"
 
     RESPONSE_FILE=$(mktemp)
-    # Device reboots after successful upload - curl will get connection reset, which is expected
-    # Redirect stderr to hide the expected "connection reset" message
+    PROGRESS_FILE=$(mktemp)
+
+    # Start upload in background - progress to file, show it with tail
     curl -X POST "http://$HOST/api/ota/upload" \
         -b "$COOKIE_FILE" \
         -F "file=@$FIRMWARE_FILE" \
         -o "$RESPONSE_FILE" \
-        --max-time 120 \
+        -w "\n%{http_code}" \
         --connect-timeout 10 \
-        --progress-bar 2>/dev/null || true
+        -# \
+        2>"$PROGRESS_FILE" &
+    CURL_PID=$!
 
-    RESPONSE=$(cat "$RESPONSE_FILE" 2>/dev/null || echo "")
-    rm -f "$RESPONSE_FILE"
+    # Disable exit-on-error for curl handling (curl may be killed/timeout)
+    set +e
+
+    # Show progress and detect 100% completion
+    UPLOAD_COMPLETE=false
+    while kill -0 $CURL_PID 2>/dev/null; do
+        # Show current progress
+        PROGRESS=$(tail -c 100 "$PROGRESS_FILE" 2>/dev/null || echo "")
+        printf "\r%s" "$PROGRESS"
+
+        # Check if upload reached 100%
+        if echo "$PROGRESS" | grep -q "100"; then
+            if [ "$UPLOAD_COMPLETE" = false ]; then
+                UPLOAD_COMPLETE=true
+                echo ""
+                echo -n "Upload complete, waiting for response..."
+                # Wait 3 more seconds for response, then kill curl
+                sleep 3
+                kill $CURL_PID 2>/dev/null
+                wait $CURL_PID 2>/dev/null
+                break
+            fi
+        fi
+        sleep 0.2
+    done
+    wait $CURL_PID 2>/dev/null
+
+    # Re-enable exit-on-error
+    set -e
 
     echo ""
+    RESPONSE=$(cat "$RESPONSE_FILE" 2>/dev/null || echo "")
+    rm -f "$RESPONSE_FILE" "$PROGRESS_FILE"
 
-    # Success if we got success:true, OR empty/error response (device rebooted before responding)
+    # Check response
     if echo "$RESPONSE" | grep -q '"success":true'; then
         echo -e "${GREEN}Firmware uploaded successfully!${NC}"
-    else
-        # Empty or error response likely means device rebooted (success)
+    elif echo "$RESPONSE" | grep -q "200"; then
         echo -e "${GREEN}Firmware uploaded successfully!${NC}"
+    elif [ "$UPLOAD_COMPLETE" = true ]; then
+        # Upload completed but no response = device rebooted (expected with old firmware)
+        echo -e "${GREEN}Firmware uploaded (device rebooted)${NC}"
+    else
+        echo -e "${RED}Firmware upload may have failed${NC}"
+        echo "Response: $RESPONSE"
     fi
 fi
 

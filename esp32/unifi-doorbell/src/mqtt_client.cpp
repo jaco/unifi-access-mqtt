@@ -133,6 +133,11 @@ void mqttReconnect() {
       }
     }
 
+    // Publish bridge info (if WebSocket connected) and doorbell state after reconnect
+    // This overwrites the LWT "offline" message with "online"
+    if (wsConnected) {
+      publishBridgeInfo();
+    }
     publishDoorbellState(activeRequestId.length() > 0);
   } else {
     int state = mqtt.state();

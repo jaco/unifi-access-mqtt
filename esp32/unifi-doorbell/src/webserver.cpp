@@ -575,10 +575,16 @@ void setupWebServer() {
             if (!checkAuth(request)) { sendUnauthorized(request); return; }
 
             bool success = !Update.hasError();
-            if (!success) {
+            if (success) {
+                log("OTA: Sending success response...");
+                request->send(200, "application/json", "{\"success\":true,\"message\":\"Update complete, rebooting...\"}");
+                delay(500);  // Give time for response to be sent
+                log("OTA: Rebooting...");
+                Serial.flush();
+                ESP.restart();
+            } else {
                 request->send(500, "application/json", "{\"success\":false,\"message\":\"Update failed\"}");
             }
-            // On success, we already restarted in the upload handler
         },
         // File upload handler (called for each chunk)
         [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
@@ -603,10 +609,7 @@ void setupWebServer() {
             if (final) {
                 if (Update.end(true)) {
                     log("OTA: Update complete, size: " + String(index + len));
-                    log("OTA: Rebooting...");
-                    Serial.flush();
-                    delay(50);
-                    ESP.restart();
+                    // Don't restart here - let the request handler send response first
                 } else {
                     log("OTA: Update.end failed");
                     Update.printError(Serial);
@@ -622,10 +625,16 @@ void setupWebServer() {
             if (!checkAuth(request)) { sendUnauthorized(request); return; }
 
             bool success = !Update.hasError();
-            if (!success) {
+            if (success) {
+                log("OTA: Sending success response...");
+                request->send(200, "application/json", "{\"success\":true,\"message\":\"Filesystem update complete, rebooting...\"}");
+                delay(500);  // Give time for response to be sent
+                log("OTA: Rebooting...");
+                Serial.flush();
+                ESP.restart();
+            } else {
                 request->send(500, "application/json", "{\"success\":false,\"message\":\"Filesystem update failed\"}");
             }
-            // On success, we already restarted in the upload handler
         },
         // File upload handler (called for each chunk)
         [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
@@ -650,10 +659,7 @@ void setupWebServer() {
             if (final) {
                 if (Update.end(true)) {
                     log("OTA: Filesystem update complete, size: " + String(index + len));
-                    log("OTA: Rebooting...");
-                    Serial.flush();
-                    delay(50);
-                    ESP.restart();
+                    // Don't restart here - let the request handler send response first
                 } else {
                     log("OTA: Filesystem Update.end failed");
                     Update.printError(Serial);
