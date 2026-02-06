@@ -7,10 +7,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Use PlatformIO from venv
-PIO="$SCRIPT_DIR/.venv/bin/pio"
-if [ ! -x "$PIO" ]; then
-  echo "Error: PlatformIO venv not found. Run 'make setup-venv' first."
+# Use PlatformIO from venv if available, otherwise global (for CI)
+if [ -x "$SCRIPT_DIR/.venv/bin/pio" ]; then
+  PIO="$SCRIPT_DIR/.venv/bin/pio"
+elif command -v pio &> /dev/null; then
+  PIO="pio"
+else
+  echo "Error: PlatformIO not found. Run 'make setup-venv' first."
   exit 1
 fi
 

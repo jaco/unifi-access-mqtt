@@ -3,8 +3,14 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Use PlatformIO from venv
-PIO="$SCRIPT_DIR/.venv/bin/pio"
+# Use PlatformIO from venv if available, otherwise global (for CI)
+if [ -x "$SCRIPT_DIR/.venv/bin/pio" ]; then
+  PIO="$SCRIPT_DIR/.venv/bin/pio"
+elif command -v pio &> /dev/null; then
+  PIO="pio"
+else
+  PIO=""
+fi
 
 # Upload firmware and/or filesystem to UniFi Doorbell via network (OTA)
 # Usage: ./upload-ota.sh [options] [environment]
@@ -124,8 +130,8 @@ echo ""
 
 # Build if requested
 if [ "$DO_BUILD" = true ]; then
-    if [ ! -x "$PIO" ]; then
-        echo -e "${RED}Error: PlatformIO venv not found. Run 'make setup-venv' first.${NC}"
+    if [ -z "$PIO" ]; then
+        echo -e "${RED}Error: PlatformIO not found. Run 'make setup-venv' first.${NC}"
         exit 1
     fi
     if [ "$UPLOAD_FIRMWARE" = true ]; then

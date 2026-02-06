@@ -10,7 +10,8 @@ PASS ?= admin
 # Python venv (for PlatformIO - requires Python 3.10-3.13)
 VENV_DIR := .venv
 PYTHON := $(shell which python3.12 python3.11 python3.10 2>/dev/null | head -1)
-PIO := $(VENV_DIR)/bin/pio
+# Use venv PIO if available, otherwise fall back to global (for CI)
+PIO := $(shell if [ -x $(VENV_DIR)/bin/pio ]; then echo $(VENV_DIR)/bin/pio; else echo pio; fi)
 
 # Colors
 GREEN := \033[0;32m
