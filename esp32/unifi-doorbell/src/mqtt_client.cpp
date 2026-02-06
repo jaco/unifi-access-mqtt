@@ -231,37 +231,40 @@ static void executeTriggerAction(MqttTriggerAction action, const char* label) {
 }
 
 static void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  // Copy topic and payload immediately - PubSubClient reuses the buffer
+  String topicStr = String(topic);
   String message = "";
   for (unsigned int i = 0; i < length; i++) {
     message += (char)payload[i];
   }
 
-  log("MQTT: Received [" + String(topic) + "]: " + message);
-
-  String topicStr = String(topic);
+  log("MQTT: Received [" + topicStr + "]: " + message);
 
   // Check command topic
   if (topicStr.endsWith("/set")) {
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, message);
-    if (!error) {
-      String action = doc["action"] | "";
+    if (error) {
+      log("MQTT: Failed to parse JSON: " + String(error.c_str()));
+      return;
+    }
 
-      if (action == "dismiss" || action == "cancel" || action == "end_call") {
-        if (activeRequestId.length() > 0 && activeDeviceId.length() > 0) {
-          if (unifiDismissCall(activeDeviceId, activeRequestId)) {
-            activeRequestId = "";
-            activeDeviceId = "";
-            activeConnectedUahId = "";
-            publishDoorbellState(false);
-          }
-        } else {
-          log("MQTT: No active doorbell call to dismiss");
+    String action = doc["action"] | "";
+
+    if (action == "dismiss" || action == "cancel" || action == "end_call") {
+      if (activeRequestId.length() > 0 && activeDeviceId.length() > 0) {
+        if (unifiDismissCall(activeDeviceId, activeRequestId)) {
+          activeRequestId = "";
+          activeDeviceId = "";
+          activeConnectedUahId = "";
+          publishDoorbellState(false);
         }
+      } else {
+        log("MQTT: No active doorbell call to dismiss");
       }
-      else if (action == "ring") {
-        unifiTriggerRing();
-      }
+    }
+    else if (action == "ring") {
+      unifiTriggerRing();
     }
     return;
   }
@@ -271,7 +274,7 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
     MqttTriggerConfig& trigger = appConfig.mqttTriggers[i];
 
     if (!trigger.enabled) continue;
-    if (strcmp(topic, trigger.topic) != 0) continue;
+    if (topicStr != trigger.topic) continue;
 
     // Topic matches - parse JSON and check field
     JsonDocument doc;
@@ -290,8 +293,7 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
     // Check if value matches
     if (valueMatches(fieldValue, trigger.triggerValue)) {
-      log("MQTT Trigger: Match! Field '" + String(trigger.jsonField) +
-                 "' = '" + String(trigger.triggerValue) + "'");
+      log("MQTT Trigger: " + String(trigger.label));
       executeTriggerAction(trigger.action, trigger.label);
     }
   }

@@ -50,6 +50,7 @@
 #define STATUS_REPORT_INTERVAL  60000
 #define WS_MAX_FAILURES         5
 #define STALE_CALL_TIMEOUT      300000  // 5 minutes
+#define NIGHTLY_RELOGIN_HOUR    2       // 2:00 CET/CEST
 
 // =============================================================================
 // State
@@ -58,6 +59,26 @@ static unsigned long lastLoginAttempt = 0;
 static unsigned long lastWsReconnect = 0;
 static unsigned long lastStatusReport = 0;
 static bool bridgeInfoPublished = false;  // Track if we published online state
+static int lastReloginDay = -1;           // Track last nightly re-login day
+
+// =============================================================================
+// Nightly re-login check
+// =============================================================================
+static void checkNightlyRelogin() {
+  time_t now_time = time(nullptr);
+  if (now_time < 1700000000) return;  // NTP not synced yet
+
+  struct tm timeinfo;
+  localtime_r(&now_time, &timeinfo);
+
+  // Check if it's the re-login hour and we haven't done it today
+  if (timeinfo.tm_hour == NIGHTLY_RELOGIN_HOUR && timeinfo.tm_yday != lastReloginDay) {
+    lastReloginDay = timeinfo.tm_yday;
+    log("Nightly re-login triggered at " + String(timeinfo.tm_hour) + ":" +
+        String(timeinfo.tm_min) + " (day " + String(timeinfo.tm_yday) + ")");
+    forceRelogin();
+  }
+}
 
 // =============================================================================
 // Setup
@@ -92,8 +113,9 @@ void setup() {
   // Normal operation mode
   setupNetwork();
 
-  // Configure NTP
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  // Configure NTP with CET/CEST timezone
+  // CET = UTC+1, CEST = UTC+2 (with automatic DST handling)
+  configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", "pool.ntp.org", "time.nist.gov");
   Serial.println("Waiting for NTP time sync...");
   time_t now_time = time(nullptr);
   int attempts = 0;
@@ -103,7 +125,10 @@ void setup() {
     attempts++;
   }
   if (now_time > 1700000000) {
-    log("NTP time synced: " + String((long)now_time));
+    struct tm timeinfo;
+    localtime_r(&now_time, &timeinfo);
+    log("NTP time synced: " + String((long)now_time) + " (local: " +
+        String(timeinfo.tm_hour) + ":" + String(timeinfo.tm_min) + ")");
   } else {
     Serial.println("NTP sync failed, using fallback time");
   }
@@ -232,6 +257,9 @@ void loop() {
     lastStatusReport = now;
     printSystemStatus();
   }
+
+  // Nightly re-login check (forces fresh authentication at 2:00 CET)
+  checkNightlyRelogin();
 
   delay(10);
 }

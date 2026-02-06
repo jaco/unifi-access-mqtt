@@ -21,6 +21,7 @@ bool unifiBootstrap();
 bool unifiDismissCall(const String& deviceId, const String& requestId);
 bool unifiTriggerRing();
 String unifiGetTopology();  // Returns JSON with devices
+void forceRelogin();        // Force re-authentication (clears session)
 
 // Helper functions
 String normalizeMAC(const String& mac);

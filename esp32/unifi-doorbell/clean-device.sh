@@ -4,6 +4,16 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Use PlatformIO from venv
+PIO="$SCRIPT_DIR/.venv/bin/pio"
+if [ ! -x "$PIO" ]; then
+  echo "Error: PlatformIO venv not found. Run 'make setup-venv' first."
+  exit 1
+fi
+
 # Default environment
 ENV="${1:-esp32-poe}"
 
@@ -28,7 +38,7 @@ fi
 
 echo ""
 echo "Erasing flash..."
-pio run -t erase -e "$ENV"
+"$PIO" run -t erase -e "$ENV"
 
 echo ""
 echo "==================================="

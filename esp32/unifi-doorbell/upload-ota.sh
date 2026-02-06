@@ -1,5 +1,11 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Use PlatformIO from venv
+PIO="$SCRIPT_DIR/.venv/bin/pio"
+
 # Upload firmware and/or filesystem to UniFi Doorbell via network (OTA)
 # Usage: ./upload-ota.sh [options] [environment]
 #
@@ -118,14 +124,18 @@ echo ""
 
 # Build if requested
 if [ "$DO_BUILD" = true ]; then
+    if [ ! -x "$PIO" ]; then
+        echo -e "${RED}Error: PlatformIO venv not found. Run 'make setup-venv' first.${NC}"
+        exit 1
+    fi
     if [ "$UPLOAD_FIRMWARE" = true ]; then
         echo -e "${CYAN}Building firmware...${NC}"
-        pio run -e "$ENV"
+        "$PIO" run -e "$ENV"
         echo ""
     fi
     if [ "$UPLOAD_FILESYSTEM" = true ]; then
         echo -e "${CYAN}Building filesystem...${NC}"
-        pio run -t buildfs -e "$ENV"
+        "$PIO" run -t buildfs -e "$ENV"
         echo ""
     fi
 fi
@@ -133,14 +143,14 @@ fi
 # Check if files exist
 if [ "$UPLOAD_FIRMWARE" = true ] && [ ! -f "$FIRMWARE_FILE" ]; then
     echo -e "${RED}Error: Firmware file not found: $FIRMWARE_FILE${NC}"
-    echo "Build first with: pio run -e $ENV"
+    echo "Build first with: make build-firmware ENV=$ENV"
     echo "Or use: ./upload-ota.sh --build"
     exit 1
 fi
 
 if [ "$UPLOAD_FILESYSTEM" = true ] && [ ! -f "$FILESYSTEM_FILE" ]; then
     echo -e "${RED}Error: Filesystem file not found: $FILESYSTEM_FILE${NC}"
-    echo "Build first with: pio run -t buildfs -e $ENV"
+    echo "Build first with: make build-fs ENV=$ENV"
     echo "Or use: ./upload-ota.sh --build"
     exit 1
 fi

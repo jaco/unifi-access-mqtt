@@ -200,8 +200,31 @@ static String extractHeader(const String& response, const String& headerName);
 static String extractCookie(const String& response, const String& cookieName);
 
 // =============================================================================
+// Internal helper for auth failure detection
+// =============================================================================
+
+static bool isAuthFailure(int statusCode) {
+  return statusCode == 401 || statusCode == 403;
+}
+
+static void handleAuthFailure(int statusCode) {
+  log("UniFi: Auth failure (HTTP " + String(statusCode) + "), forcing re-login");
+  isLoggedIn = false;
+  sessionCookie = "";
+  csrfToken = "";
+  unifiLastError = "Session expired";
+}
+
+// =============================================================================
 // Public API Functions
 // =============================================================================
+
+void forceRelogin() {
+  log("UniFi: Forcing re-login...");
+  isLoggedIn = false;
+  sessionCookie = "";
+  csrfToken = "";
+}
 
 bool unifiLogin() {
   unifiLastError = "";  // Clear previous error
@@ -385,6 +408,9 @@ bool unifiDismissCall(const String& deviceId, const String& requestId) {
     log("UniFi: Doorbell call dismissed");
   } else {
     log("UniFi: Dismiss failed, status: " + String(statusCode));
+    if (isAuthFailure(statusCode)) {
+      handleAuthFailure(statusCode);
+    }
   }
 
   return success;
@@ -447,6 +473,9 @@ static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
   if (httpStatus >= 400) {
     apiClient.stop();
     log("UniFi: HTTP error " + String(httpStatus));
+    if (isAuthFailure(httpStatus)) {
+      handleAuthFailure(httpStatus);
+    }
     return false;
   }
 
@@ -676,6 +705,9 @@ bool unifiTriggerRing() {
     log("UniFi: Doorbell ring triggered");
   } else {
     log("UniFi: Trigger failed, status: " + String(statusCode));
+    if (isAuthFailure(statusCode)) {
+      handleAuthFailure(statusCode);
+    }
   }
 
   return success;

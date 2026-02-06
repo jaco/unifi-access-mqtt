@@ -4,6 +4,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Use PlatformIO from venv
+PIO="$SCRIPT_DIR/.venv/bin/pio"
+if [ ! -x "$PIO" ]; then
+  echo "Error: PlatformIO venv not found. Run 'make setup-venv' first."
+  exit 1
+fi
+
 BOARD="${1:-esp32-poe}"
 
 case "$BOARD" in
@@ -29,4 +36,4 @@ case "$BOARD" in
 esac
 
 echo "Monitoring: $ENV"
-pio device monitor -e "$ENV"
+"$PIO" device monitor -e "$ENV"

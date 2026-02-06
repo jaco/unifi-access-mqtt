@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
 import type { Status } from '../types'
+import api from '../api/api'
 
 interface LogEntry {
   timestamp: string
@@ -13,8 +14,22 @@ export function useWebSocket() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number>()
+  const initialFetchDone = useRef(false)
+
+  const fetchInitialStatus = useCallback(async () => {
+    if (initialFetchDone.current) return
+    initialFetchDone.current = true
+    try {
+      const data = await api.getStatus()
+      setStatus(data)
+      setRinging(data.doorbell?.active ?? false)
+    } catch {
+      // Will be updated via WebSocket
+    }
+  }, [])
 
   const connect = useCallback(() => {
+    fetchInitialStatus()
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${protocol}//${location.host}/ws`)
 

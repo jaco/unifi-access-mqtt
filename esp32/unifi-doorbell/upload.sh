@@ -3,6 +3,16 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Use PlatformIO from venv
+PIO="$SCRIPT_DIR/.venv/bin/pio"
+if [ ! -x "$PIO" ]; then
+  echo "Error: PlatformIO venv not found. Run 'make setup-venv' first."
+  exit 1
+fi
+
 # Parse arguments
 CLEAN=false
 ENV=""
@@ -66,24 +76,24 @@ if [ "$CLEAN" = true ]; then
 
     echo ""
     echo "Step 1: Erasing flash..."
-    pio run -t erase -e "$ENV"
+    "$PIO" run -t erase -e "$ENV"
 fi
 
 echo ""
 echo "Building firmware..."
-pio run -e "$ENV"
+"$PIO" run -e "$ENV"
 
 echo ""
 echo "Building filesystem..."
-pio run -t buildfs -e "$ENV"
+"$PIO" run -t buildfs -e "$ENV"
 
 echo ""
 echo "Uploading filesystem (web app)..."
-pio run -t uploadfs -e "$ENV"
+"$PIO" run -t uploadfs -e "$ENV"
 
 echo ""
 echo "Uploading firmware..."
-pio run -t upload -e "$ENV"
+"$PIO" run -t upload -e "$ENV"
 
 echo ""
 echo "==================================="
@@ -97,4 +107,4 @@ echo "==================================="
 echo ""
 echo "Starting serial monitor (Ctrl+C to exit)..."
 echo ""
-pio device monitor -e "$ENV"
+"$PIO" device monitor -e "$ENV"

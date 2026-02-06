@@ -37,15 +37,19 @@ export function StatusTab({ status, ringing }: StatusTabProps) {
             <div class="status-item">
               <div class="label">Doorbell</div>
               <div class={`value ${ringing ? 'ringing' : ''}`}>
-                {ringing ? 'Ringing' : 'Idle'}
+                {status.doorbell === undefined
+                  ? '--'
+                  : ringing ? 'Ringing' : 'Idle'}
               </div>
             </div>
             <div class="status-item">
               <div class="label">Network</div>
-              <div class={`value ${status.network?.connected ? 'connected' : 'disconnected'}`}>
-                {status.network?.connected
-                  ? (status.network.type === 'ethernet' ? 'Ethernet' : 'WiFi')
-                  : 'Disconnected'}
+              <div class={`value ${status.network?.connected ? 'connected' : status.network ? 'disconnected' : ''}`}>
+                {status.network === undefined
+                  ? '--'
+                  : status.network.connected
+                    ? (status.network.type === 'ethernet' ? 'Ethernet' : 'WiFi')
+                    : 'Disconnected'}
               </div>
             </div>
             <div class="status-item">
@@ -65,7 +69,11 @@ export function StatusTab({ status, ringing }: StatusTabProps) {
             <div class="status-item">
               <div class="label">MQTT</div>
               <div class={`value ${status.mqtt?.connected ? 'connected' : ''}`}>
-                {status.mqtt?.connected ? 'Connected' : 'Disabled'}
+                {status.mqtt === undefined
+                  ? '--'
+                  : status.mqtt.connected
+                    ? 'Connected'
+                    : 'Disabled'}
               </div>
             </div>
             <div class="status-item">

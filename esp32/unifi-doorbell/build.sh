@@ -4,6 +4,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Use PlatformIO from venv
+PIO="$SCRIPT_DIR/.venv/bin/pio"
+if [ ! -x "$PIO" ]; then
+  echo "Error: PlatformIO venv not found. Run 'make setup-venv' first."
+  exit 1
+fi
+
 BOARD="${1:-esp32-poe}"
 
 case "$BOARD" in
@@ -36,4 +43,4 @@ if [ ! -f "include/config.h" ]; then
 fi
 
 echo "Building for: $ENV"
-pio run -e "$ENV"
+"$PIO" run -e "$ENV"
