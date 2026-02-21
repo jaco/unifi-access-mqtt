@@ -16,9 +16,24 @@ export function StatusTab({ status, ringing }: StatusTabProps) {
 
   const formatUptime = (seconds?: number) => {
     if (seconds === undefined) return '--'
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    return `${hours}h ${minutes}m`
+
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+    const years = Math.floor(days / 365)
+    const months = Math.floor((days % 365) / 30)
+    const remainingDays = days % 30
+    const remainingHours = hours % 24
+    const remainingMinutes = minutes % 60
+
+    const parts: string[] = []
+    if (years > 0) parts.push(`${years}y`)
+    if (months > 0) parts.push(`${months}mo`)
+    if (remainingDays > 0) parts.push(`${remainingDays}d`)
+    if (remainingHours > 0) parts.push(`${remainingHours}h`)
+    if (remainingMinutes > 0) parts.push(`${remainingMinutes}m`)
+
+    return parts.length > 0 ? parts.join(' ') : '0m'
   }
 
   const formatHeap = (bytes?: number) => {
