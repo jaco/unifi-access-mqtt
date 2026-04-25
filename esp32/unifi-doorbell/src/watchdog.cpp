@@ -111,4 +111,14 @@ void checkLiveness() {
     delay(100);
     ESP.restart();
   }
+
+  // Check for zombie WebSocket (connected but no traffic)
+  // ESP-IDF client pings every 15s, so we should see regular activity
+  unsigned long lastActivity = getLastWsActivity();
+  if (wsConnected && lastActivity > 0 && (now - lastActivity > LIVENESS_WS_ACTIVITY_TIMEOUT)) {
+    log("WATCHDOG: WebSocket zombie - connected but no activity for " +
+        String((now - lastActivity) / 1000) + "s - restarting!");
+    delay(100);
+    ESP.restart();
+  }
 }

@@ -35,6 +35,7 @@ char* pendingMessage = nullptr;
 // Internal state
 static int wsReconnectFailures = 0;
 static int wsReconnectCount = 0;  // Total reconnects for monitoring
+static volatile unsigned long lastWsActivity = 0;  // Last time any WS event was received
 
 // Forward declarations
 static void handleWebSocketMessage(const char* message);
@@ -48,6 +49,7 @@ static void websocket_event_handler(void* handler_args, esp_event_base_t base,
     case WEBSOCKET_EVENT_CONNECTED:
       ESP_LOGI(TAG, "Connected");
       wsConnected = true;
+      lastWsActivity = millis();
       wsReconnectFailures = 0;
       wsLastError = "";  // Clear error on successful connection
       break;
@@ -61,6 +63,7 @@ static void websocket_event_handler(void* handler_args, esp_event_base_t base,
       break;
 
     case WEBSOCKET_EVENT_DATA:
+      lastWsActivity = millis();
       // Only process complete text frames
       if (data->op_code == 0x01 && data->data_len > 0 && data->data_ptr != nullptr) {
         // Fast check for remote_view events only
@@ -205,6 +208,10 @@ void incrementWsReconnectFailures() {
 
 int getWsReconnectCount() {
   return wsReconnectCount;
+}
+
+unsigned long getLastWsActivity() {
+  return lastWsActivity;
 }
 
 void processWebSocketMessage() {

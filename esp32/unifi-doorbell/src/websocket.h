@@ -30,3 +30,4 @@ void resetWsReconnectFailures();
 int getWsReconnectFailures();
 void incrementWsReconnectFailures();
 int getWsReconnectCount();
+unsigned long getLastWsActivity();
