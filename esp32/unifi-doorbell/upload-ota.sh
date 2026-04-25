@@ -33,11 +33,18 @@ fi
 
 set -e
 
-# Defaults
-ENV="esp32-poe"
-HOST="doorbell.local"
-USERNAME="admin"
-PASSWORD="admin"
+# Load .env file if present
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+# Defaults (env vars from .env take precedence)
+ENV="${OTA_ENV:-esp32-poe}"
+HOST="${OTA_HOST:-doorbell.local}"
+USERNAME="${OTA_USER:-admin}"
+PASSWORD="${OTA_PASS:-admin}"
 UPLOAD_FIRMWARE=true
 UPLOAD_FILESYSTEM=true
 DO_BUILD=false

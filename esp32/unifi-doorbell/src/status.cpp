@@ -48,7 +48,12 @@ void printSystemStatus() {
   logDebug("  Heap: " + String(usedHeap / 1024) + "KB / " + String(heapSize / 1024) + "KB (" + String(heapUsagePercent, 1) + "% used)");
   logDebug("  Free: " + String(freeHeap / 1024) + "KB, Min free: " + String(minFreeHeap / 1024) + "KB");
   logDebug("  CPU: " + String(ESP.getCpuFreqMHz()) + " MHz");
-  logDebug("  Uptime: " + String(millis() / 1000 / 60) + " min");
+  unsigned long uptimeSec = millis() / 1000;
+  unsigned long days = uptimeSec / 86400;
+  unsigned long hours = (uptimeSec % 86400) / 3600;
+  unsigned long mins = (uptimeSec % 3600) / 60;
+  String uptimeStr = String(days) + "d " + String(hours) + "h " + String(mins) + "m";
+  logDebug("  Uptime: " + uptimeStr);
   logDebug("  WS: " + String(wsConnected ? "connected" : "disconnected") + " (reconnects: " + String(getWsReconnectCount()) + "), MQTT: " + String(mqtt.connected() ? "connected" : "disconnected"));
 }
 

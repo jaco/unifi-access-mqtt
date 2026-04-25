@@ -1,6 +1,10 @@
 # UniFi Doorbell - Build & Deploy Makefile
 # ==========================================
 
+# Load .env file if present
+-include .env
+export
+
 # Configuration
 ENV ?= esp32-poe
 HOST ?= doorbell.local

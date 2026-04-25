@@ -30,6 +30,7 @@
 #include "status.h"
 #include "webserver.h"
 #include "ap_mode.h"
+#include "watchdog.h"
 
 // =============================================================================
 // Network type for display
@@ -92,6 +93,8 @@ void setup() {
   Serial.print("Network: ");
   Serial.println(NETWORK_TYPE);
 
+  logResetReason();
+
   // Load configuration from NVS (or migrate from config.h)
   loadConfig();
 
@@ -139,6 +142,9 @@ void setup() {
   // Initialize Web Server
   setupWebServer();
 
+  // Enable hardware watchdog (must be last - starts the WDT timer)
+  setupWatchdog();
+
   log("Setup complete");
   printSystemStatus();
 }
@@ -153,6 +159,7 @@ void loop() {
   if (apModeActive) {
     apModeLoop();
     webServerLoop();
+    feedWatchdog();
     delay(10);
     return;
   }
@@ -168,6 +175,8 @@ void loop() {
   updateStatusLed(isRinging);
 
   if (!networkConnected) {
+    feedWatchdog();
+    checkLiveness();
     delay(100);
     return;
   }
@@ -260,6 +269,10 @@ void loop() {
 
   // Nightly re-login check (forces fresh authentication at 2:00 CET)
   checkNightlyRelogin();
+
+  // Watchdog: feed hardware WDT and check software liveness
+  feedWatchdog();
+  checkLiveness();
 
   delay(10);
 }
