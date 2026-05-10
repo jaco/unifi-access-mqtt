@@ -20,6 +20,24 @@
                     "openValue": false
                 }
             ]
+        },
+        "viewer": {
+            "broker": "192.168.1.1:12812",
+            "ca":   "/var/lib/unifi-access-mqtt/certs/ca-cert.pem",
+            "cert": "/var/lib/unifi-access-mqtt/certs/mqtt-client-cert.pem",
+            "key":  "/var/lib/unifi-access-mqtt/certs/mqtt-client-priv.pem",
+            "controllerID": "aabbccddeeff",
+            "wakeOnMotion": [
+                {
+                    "topic": "zigbee2mqtt/eg_cont_haustuere",
+                    "field": "contact",
+                    "value": false
+                },
+                {
+                    "topic": "haus/frontdoor/motion",
+                    "value": true
+                }
+            ]
         }
     },
     "loglevel": "info"

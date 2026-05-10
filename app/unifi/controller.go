@@ -99,6 +99,31 @@ func (c *Controller) GetDoor(id string) *Door {
 	return c.doors[id]
 }
 
+// GetViewerIDs returns all known viewer device IDs.
+func (c *Controller) GetViewerIDs() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	ids := make([]string, 0, len(c.viewers))
+	for id := range c.viewers {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// GetDoorbellSourceReader returns the configured/resolved source reader device
+// ID for doorbell triggers, or "" if no doorbell config is set.
+func (c *Controller) GetDoorbellSourceReader() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.doorbellConfig == nil {
+		return ""
+	}
+	if c.doorbellConfig.resolvedReader != "" {
+		return c.doorbellConfig.resolvedReader
+	}
+	return c.doorbellConfig.SourceReader
+}
+
 // GetDoorByName returns a door by name (case-insensitive)
 func (c *Controller) GetDoorByName(name string) *Door {
 	c.mu.RLock()

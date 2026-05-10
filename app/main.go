@@ -83,6 +83,23 @@ func main() {
 		mqttpub.NewContactListener(controller, cfg.UniFi.Doorbell.DismissOnContact).Start()
 	}
 
+	// Connect to the controller's internal MQTT broker (mTLS) for viewer wake-up
+	if cfg.UniFi.Viewer != nil && len(cfg.UniFi.Viewer.WakeOnMotion) > 0 {
+		waker := unifi.NewViewerWaker(
+			cfg.UniFi.Viewer.Broker,
+			cfg.UniFi.Viewer.ControllerID,
+			cfg.UniFi.Viewer.CA,
+			cfg.UniFi.Viewer.Cert,
+			cfg.UniFi.Viewer.Key,
+		)
+		if err := waker.Connect(); err != nil {
+			logger.Error("Failed to connect viewer waker", "err", err)
+		} else {
+			defer waker.Disconnect()
+			mqttpub.NewMotionListener(controller, waker, cfg.UniFi.Viewer.WakeOnMotion).Start()
+		}
+	}
+
 	// Publish initial state for all doors
 	publisher.PublishAllDoors()
 

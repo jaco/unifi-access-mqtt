@@ -156,6 +156,7 @@ A standalone application that bridges UniFi Access to MQTT, providing real-time 
 - Remote door unlock via MQTT commands
 - Trigger doorbell rings via MQTT
 - Dismiss active calls automatically when an external MQTT door contact opens (e.g. Zigbee2MQTT)
+- Wake viewer displays automatically when an external MQTT motion sensor fires (no doorbell ring on the reader)
 - Support for multiple door types (UAH, UGT, UA-ULTRA, UA-Hub-Door-Mini)
 - Automatic reconnection on connection loss
 
@@ -250,6 +251,51 @@ The gateway can subscribe to arbitrary MQTT topics (e.g. published by Zigbee2MQT
 | `openValue` | Value of `field` that means "door is open". For Z2M `contact` sensors this is `false` (closed = `true`, open = `false`). Strings and numbers are also supported. |
 
 Whenever the configured value is observed, every door with a currently active doorbell call is dismissed. Multiple bindings can be defined for separate sensors. The dismiss is a no-op when nothing is ringing.
+
+If `field` is omitted, the entire MQTT payload is matched against `openValue` instead — so a sensor publishing the literal payload `true` (or `ON`, `OFF`, `1`, etc.) works without any JSON envelope.
+
+#### Wake viewers on motion (mTLS to controller)
+
+The Cloud Gateway exposes an internal mTLS MQTT broker (port `12812`) that accepts `remote_view` RPCs. These wake the screen of UniFi Access Viewer devices and show the doorbell UI **without** ringing the source reader audibly — useful as a motion-triggered preview.
+
+This requires extracting client certificates from the Cloud Gateway via `scripts/copy-certs.sh` (one-time setup) and mounting them into the gateway's container.
+
+```json
+"unifi": {
+    "host": "https://192.168.1.1",
+    "username": "api-user",
+    "password": "your-password",
+    "viewer": {
+        "broker": "192.168.1.1:12812",
+        "ca":   "/var/lib/unifi-access-mqtt/certs/ca-cert.pem",
+        "cert": "/var/lib/unifi-access-mqtt/certs/mqtt-client-cert.pem",
+        "key":  "/var/lib/unifi-access-mqtt/certs/mqtt-client-priv.pem",
+        "controllerID": "aabbccddeeff",
+        "wakeOnMotion": [
+            {
+                "topic": "zigbee2mqtt/eg_cont_haustuere",
+                "field": "contact",
+                "value": false
+            },
+            {
+                "topic": "haus/frontdoor/motion",
+                "value": true
+            }
+        ]
+    }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `broker` | `host[:port]` of the controller's internal MQTT broker. Default port is `12812`. |
+| `ca`, `cert`, `key` | Paths to the CA, client certificate, and private key extracted by `scripts/copy-certs.sh`. |
+| `controllerID` | The controller's MAC address with colons stripped, e.g. `aabbccddeeff`. The same value `wake-viewer.sh` uses. |
+| `wakeOnMotion[].topic` | Absolute MQTT topic on your home-automation broker. |
+| `wakeOnMotion[].field` | Optional JSON field. If omitted, the entire payload is matched (e.g. raw `true`, `ON`, `1`). |
+| `wakeOnMotion[].value` | Trigger value (boolean, string, number). |
+| `wakeOnMotion[].viewers` | Optional list of viewer device IDs to wake. Defaults to **all known viewers** discovered at bootstrap. |
+| `wakeOnMotion[].sourceReader` | Optional source reader for the camera feed shown on the viewer. Defaults to `doorbell.sourceReader` if set. |
 
 ### MQTT Topics
 

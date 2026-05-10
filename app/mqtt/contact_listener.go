@@ -1,8 +1,6 @@
 package mqtt
 
 import (
-	"encoding/json"
-
 	"github.com/mqtt-home/unifi-access-mqtt/config"
 	"github.com/mqtt-home/unifi-access-mqtt/unifi"
 	"github.com/philipparndt/go-logger"
@@ -29,9 +27,8 @@ func (l *ContactListener) Start() {
 	for i := range l.bindings {
 		binding := l.bindings[i]
 
-		if binding.Topic == "" || binding.Field == "" {
-			logger.Warn("dismiss-on-contact: skipping invalid binding",
-				"topic", binding.Topic, "field", binding.Field)
+		if binding.Topic == "" {
+			logger.Warn("dismiss-on-contact: skipping binding with empty topic")
 			continue
 		}
 
@@ -44,20 +41,13 @@ func (l *ContactListener) Start() {
 }
 
 func (l *ContactListener) handle(b config.ContactBinding, payload []byte) {
-	var data map[string]any
-	if err := json.Unmarshal(payload, &data); err != nil {
-		logger.Warn("dismiss-on-contact: invalid JSON", "topic", b.Topic, "err", err)
-		return
-	}
-
-	value, ok := data[b.Field]
+	matched, value, ok := matchPayload(payload, b.Field, b.OpenValue)
 	if !ok {
-		logger.Debug("dismiss-on-contact: field not present in payload",
+		logger.Debug("dismiss-on-contact: payload could not be matched",
 			"topic", b.Topic, "field", b.Field)
 		return
 	}
-
-	if !jsonEqual(value, b.OpenValue) {
+	if !matched {
 		logger.Trace("dismiss-on-contact: value does not match openValue",
 			"topic", b.Topic, "field", b.Field, "value", value)
 		return
@@ -81,16 +71,4 @@ func (l *ContactListener) handle(b config.ContactBinding, payload []byte) {
 		logger.Debug("dismiss-on-contact: contact opened but no active doorbell call",
 			"topic", b.Topic)
 	}
-}
-
-// jsonEqual compares two arbitrary JSON-decoded values by re-marshaling and
-// string-comparing. This makes bool, string, and number comparisons uniform
-// regardless of how the configured OpenValue was decoded.
-func jsonEqual(a, b any) bool {
-	ab, err1 := json.Marshal(a)
-	bb, err2 := json.Marshal(b)
-	if err1 != nil || err2 != nil {
-		return false
-	}
-	return string(ab) == string(bb)
 }

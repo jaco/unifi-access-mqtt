@@ -8,7 +8,7 @@ require (
 	github.com/philipparndt/mqtt-gateway v1.9.0
 )
 
-require github.com/eclipse/paho.mqtt.golang v1.5.1 // indirect
+require github.com/eclipse/paho.mqtt.golang v1.5.1
 
 require (
 	github.com/go-logr/logr v1.4.3 // indirect
