@@ -24,6 +24,7 @@ type Controller struct {
 	doors          map[string]*Door
 	doorsByName    map[string]*Door
 	viewers        map[string]bool // Track known viewer device IDs
+	readers        map[string]bool // Track known reader device IDs (UA-G3, UA-G3-Pro, etc.)
 	doorbellConfig *DoorbellConfig // Configured doorbell devices
 	mu             sync.RWMutex
 
@@ -42,6 +43,7 @@ func NewController(host, username, password string, verifySSL bool) *Controller 
 		doors:       make(map[string]*Door),
 		doorsByName: make(map[string]*Door),
 		viewers:     make(map[string]bool),
+		readers:     make(map[string]bool),
 	}
 
 	c.eventListener = NewEventListener(client)
@@ -239,9 +241,16 @@ func (c *Controller) bootstrap() error {
 	// These are the devices that have the camera and doorbell button
 	doorReaders := make(map[string]string)
 	for _, device := range bootstrap.Devices {
-		if device.IsReader() && device.Door != nil {
-			doorReaders[device.Door.UniqueID] = device.GetID()
-			logger.Debug("Reader associated with door", "reader", device.GetID(), "name", device.Name, "door", device.Door.Name)
+		if device.IsReader() {
+			readerID := device.GetID()
+			if readerID != "" {
+				// Track this reader ID so we can ignore device update events for it
+				c.readers[readerID] = true
+			}
+			if device.Door != nil {
+				doorReaders[device.Door.UniqueID] = readerID
+				logger.Debug("Reader associated with door", "reader", readerID, "name", device.Name, "door", device.Door.Name)
+			}
 		}
 	}
 
@@ -569,12 +578,11 @@ func (c *Controller) handleDeviceUpdateV2(event EventPacket) {
 	c.mu.Unlock()
 
 	if door == nil {
-		// Check if this is a viewer device - if so, skip silently
+		// Viewer / reader updates are expected for non-hub devices - skip silently
 		c.mu.RLock()
-		isViewer := c.viewers[deviceID]
+		isKnownNonDoor := c.viewers[deviceID] || c.readers[deviceID]
 		c.mu.RUnlock()
-		if isViewer {
-			// Viewer updates are expected and can be ignored
+		if isKnownNonDoor {
 			return
 		}
 
