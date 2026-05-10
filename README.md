@@ -155,6 +155,7 @@ A standalone application that bridges UniFi Access to MQTT, providing real-time 
 - Doorbell ring notifications
 - Remote door unlock via MQTT commands
 - Trigger doorbell rings via MQTT
+- Dismiss active calls automatically when an external MQTT door contact opens (e.g. Zigbee2MQTT)
 - Support for multiple door types (UAH, UGT, UA-ULTRA, UA-Hub-Door-Mini)
 - Automatic reconnection on connection loss
 
@@ -218,6 +219,37 @@ Create a `config.json` file:
 ```
 
 Environment variables can be used with `${ENV_VAR}` syntax.
+
+#### Dismiss calls when an external door contact opens
+
+The gateway can subscribe to arbitrary MQTT topics (e.g. published by Zigbee2MQTT) and automatically dismiss active doorbell calls when the contact reports the door as open. Add a `doorbell.dismissOnContact` list to the `unifi` block:
+
+```json
+"unifi": {
+    "host": "https://192.168.1.1",
+    "username": "api-user",
+    "password": "your-password",
+    "doorbell": {
+        "sourceReader": "AA:BB:CC:DD:EE:FF",
+        "targetViewers": ["11:22:33:44:55:66"],
+        "dismissOnContact": [
+            {
+                "topic": "zigbee2mqtt/eg_cont_haustuere",
+                "field": "contact",
+                "openValue": false
+            }
+        ]
+    }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `topic` | Absolute MQTT topic to subscribe to. Payload must be JSON. |
+| `field` | JSON field to evaluate, e.g. `contact` for Aqara/Xiaomi sensors via Zigbee2MQTT. |
+| `openValue` | Value of `field` that means "door is open". For Z2M `contact` sensors this is `false` (closed = `true`, open = `false`). Strings and numbers are also supported. |
+
+Whenever the configured value is observed, every door with a currently active doorbell call is dismissed. Multiple bindings can be defined for separate sensors. The dismiss is a no-op when nothing is ringing.
 
 ### MQTT Topics
 
@@ -291,10 +323,42 @@ mqtt:
 
 ## UniFi Access Setup
 
-1. Log into your UniFi Access controller
-2. Navigate to **Settings** > **Users**
-3. Create a new user with API access permissions
-4. Use these credentials in your configuration
+The ESP32 firmware talks to your UniFi Access controller through **two** independent endpoints:
+
+| Used for | Endpoint | Auth | Port |
+| --- | --- | --- | --- |
+| **Trigger ring**, **list devices** | `POST/GET /api/v1/developer/...` (official, documented) | API Token (Bearer) | `12445` |
+| **Cancel an active ring** | `POST /proxy/access/api/v2/device/{id}/reply_remote` (legacy, undocumented) | Username + password (login → CSRF + session cookie) | `443` |
+
+The official developer API does not have a "purely cancel" endpoint — its `cancel: true` flag on the trigger endpoint also re-triggers a fresh ring. So we use the official API for ringing (it's stable and documented) and keep the legacy login + `reply_remote` path only for the dismiss flow. **You need both credentials.**
+
+### 1. Create an API Token
+
+1. Sign into the UniFi Portal: <https://account.ui.com/login>.
+2. Open the UniFi Console where Access is installed.
+3. Go to **Access > Settings > General > Advanced > API Token**.
+4. Click **Create New**, give it a name (e.g. "doorbell"), pick a validity period, and grant scopes **`view:device`** and **`edit:device`**.
+5. Copy the token — it's shown only once.
+
+> Requires UniFi Access **4.0.10 or later**. Older controllers won't expose this endpoint and the firmware will report `Controller does not support developer API (requires UniFi Access 4.0.10+)`.
+
+### 2. Create a local Admin user (for dismiss)
+
+1. In the UniFi Access app, go to **Settings > Admins > Add Admin**.
+2. Create a local user (not a Cloud Identity user) with at least **View Only** permission.
+3. Use this username and password in the wizard.
+
+### 3. Run the firmware setup wizard
+
+The wizard at `http://doorbell.local` prompts for: host, port (default `12445`), API token, username, and password. Step 4 lets you hit a **Test ring** button to verify the full path works.
+
+### Upgrading from a previous firmware version
+
+If you're upgrading a device that was previously configured with username/password only, your existing credentials are preserved. The wizard surfaces a banner asking you to add an API token; you don't need to re-enter the username or password. After adding the token, trigger switches to the official API and dismiss continues to work as before.
+
+### API contract
+
+The OpenAPI document for the subset of the official API used by the firmware is at [`esp32/unifi-doorbell/openspec/changes/use-unifi-official-api/unifi-access-openapi.yaml`](esp32/unifi-doorbell/openspec/changes/use-unifi-official-api/unifi-access-openapi.yaml). It covers only the official endpoints; the legacy `reply_remote` endpoint used for dismiss is intentionally not modelled there.
 
 ---
 

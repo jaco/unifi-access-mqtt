@@ -28,6 +28,10 @@ void initConfigManager() {
     appConfig.mqttEnabled = false;
     appConfig.configured = false;
 
+    // UniFi developer-API defaults
+    appConfig.unifiPort = 12445;
+    appConfig.unifiApiToken[0] = '\0';
+
     // Default web credentials
     strncpy(appConfig.webUsername, "admin", CFG_MAX_USERNAME_LEN - 1);
     strncpy(appConfig.webPassword, "admin", CFG_MAX_PASSWORD_LEN - 1);
@@ -78,9 +82,12 @@ void loadConfig() {
         String host = prefs.getString("unifi_host", "");
         String user = prefs.getString("unifi_user", "");
         String upass = prefs.getString("unifi_pass", "");
+        String token = prefs.getString("uf_token", "");
         strncpy(appConfig.unifiHost, host.c_str(), CFG_MAX_HOST_LEN - 1);
         strncpy(appConfig.unifiUsername, user.c_str(), CFG_MAX_USERNAME_LEN - 1);
         strncpy(appConfig.unifiPassword, upass.c_str(), CFG_MAX_PASSWORD_LEN - 1);
+        strncpy(appConfig.unifiApiToken, token.c_str(), CFG_MAX_API_TOKEN_LEN - 1);
+        appConfig.unifiPort = prefs.getUShort("uf_port", 12445);
 
         // Doorbell
         String devId = prefs.getString("db_device_id", "");
@@ -264,6 +271,8 @@ void saveConfig() {
     prefs.putString("unifi_host", appConfig.unifiHost);
     prefs.putString("unifi_user", appConfig.unifiUsername);
     prefs.putString("unifi_pass", appConfig.unifiPassword);
+    prefs.putString("uf_token", appConfig.unifiApiToken);
+    prefs.putUShort("uf_port", appConfig.unifiPort);
 
     // Doorbell
     prefs.putString("db_device_id", appConfig.doorbellDeviceId);
@@ -371,6 +380,16 @@ bool hasUnifiCredentials() {
            strlen(appConfig.unifiPassword) > 0;
 }
 
+bool hasUnifiApiToken() {
+    return strlen(appConfig.unifiHost) > 0 &&
+           strlen(appConfig.unifiApiToken) > 0;
+}
+
+bool unifiSetupIncomplete() {
+    return strlen(appConfig.unifiHost) > 0 &&
+           strlen(appConfig.unifiApiToken) == 0;
+}
+
 String getConfigJson(bool maskPasswords) {
     JsonDocument doc;
 
@@ -381,8 +400,14 @@ String getConfigJson(bool maskPasswords) {
 
     // UniFi
     doc["unifi"]["host"] = appConfig.unifiHost;
+    doc["unifi"]["port"] = appConfig.unifiPort;
     doc["unifi"]["username"] = appConfig.unifiUsername;
     doc["unifi"]["password"] = maskPasswords ? "********" : appConfig.unifiPassword;
+    if (maskPasswords) {
+        doc["unifi"]["apiTokenSet"] = strlen(appConfig.unifiApiToken) > 0;
+    } else {
+        doc["unifi"]["apiToken"] = appConfig.unifiApiToken;
+    }
 
     // Doorbell
     doc["doorbell"]["deviceId"] = appConfig.doorbellDeviceId;
@@ -474,6 +499,10 @@ bool updateConfigFromJson(const String& json) {
     if (doc["unifi"]["host"].is<const char*>()) {
         strncpy(appConfig.unifiHost, doc["unifi"]["host"], CFG_MAX_HOST_LEN - 1);
     }
+    if (doc["unifi"]["port"].is<int>()) {
+        int p = doc["unifi"]["port"];
+        if (p > 0 && p <= 65535) appConfig.unifiPort = (uint16_t)p;
+    }
     if (doc["unifi"]["username"].is<const char*>()) {
         strncpy(appConfig.unifiUsername, doc["unifi"]["username"], CFG_MAX_USERNAME_LEN - 1);
     }
@@ -481,6 +510,13 @@ bool updateConfigFromJson(const String& json) {
         const char* pass = doc["unifi"]["password"];
         if (strcmp(pass, "********") != 0) {
             strncpy(appConfig.unifiPassword, pass, CFG_MAX_PASSWORD_LEN - 1);
+        }
+    }
+    if (doc["unifi"]["apiToken"].is<const char*>()) {
+        const char* tok = doc["unifi"]["apiToken"];
+        // Sentinel "********" means "keep existing" — same convention as passwords.
+        if (strcmp(tok, "********") != 0) {
+            strncpy(appConfig.unifiApiToken, tok, CFG_MAX_API_TOKEN_LEN - 1);
         }
     }
 

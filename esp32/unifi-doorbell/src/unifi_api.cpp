@@ -180,7 +180,7 @@ public:
   bool isFinished() { return finished; }
 };
 
-// Session state
+// Legacy context state
 String csrfToken = "";
 String sessionCookie = "";
 String userId = "";
@@ -188,14 +188,16 @@ String userName = "";
 bool isLoggedIn = false;
 String unifiLastError = "";
 
+// Developer-API context state
+bool developerApiReady = false;
+
 // Resolved device IDs
 String resolvedDoorbellDeviceId = "";
 String resolvedViewerIds[4];
 int resolvedViewerCount = 0;
 
-// Internal helper functions
+// Internal helper functions (legacy context)
 static String readHttpResponse(WiFiClientSecure& client);
-static int extractStatusCode(const String& response);
 static String extractHeader(const String& response, const String& headerName);
 static String extractCookie(const String& response, const String& cookieName);
 
@@ -320,29 +322,22 @@ bool unifiBootstrap() {
   // Reset viewer count for re-bootstrap
   resolvedViewerCount = 0;
 
-  // Resolve doorbell device ID
-  String configuredId = appConfig.doorbellDeviceId;
-
-  if (configuredId.indexOf(":") >= 0 || configuredId.indexOf("-") >= 0) {
-    resolvedDoorbellDeviceId = normalizeMAC(configuredId);
-    log("UniFi: Doorbell MAC " + configuredId + " -> ID " + resolvedDoorbellDeviceId);
-  } else {
-    resolvedDoorbellDeviceId = configuredId;
+  // The developer API returns IDs in the same form we use to call it back —
+  // no MAC-style normalization needed. Whatever was stored is used verbatim.
+  resolvedDoorbellDeviceId = appConfig.doorbellDeviceId;
+  if (resolvedDoorbellDeviceId.length() > 0) {
     log("UniFi: Doorbell ID: " + resolvedDoorbellDeviceId);
   }
 
-  // Resolve viewer IDs from config
+  // Viewer IDs are part of the legacy `notify_door_guards` payload and are no
+  // longer used by the official trigger endpoint, but we keep populating the
+  // list in case the rest of the codebase (status / WebSocket consumers)
+  // still references it.
   for (int i = 0; i < appConfig.viewerCount && i < CFG_MAX_VIEWERS; i++) {
     String viewerId = appConfig.viewerIds[i];
     if (viewerId.length() == 0) continue;
-
-    if (viewerId.indexOf(":") >= 0 || viewerId.indexOf("-") >= 0) {
-      resolvedViewerIds[resolvedViewerCount++] = normalizeMAC(viewerId);
-      log("UniFi: Viewer MAC " + viewerId + " -> ID " + resolvedViewerIds[resolvedViewerCount-1]);
-    } else {
-      resolvedViewerIds[resolvedViewerCount++] = viewerId;
-      log("UniFi: Viewer ID: " + viewerId);
-    }
+    resolvedViewerIds[resolvedViewerCount++] = viewerId;
+    log("UniFi: Viewer ID: " + viewerId);
   }
 
   log("UniFi: Bootstrap complete - " + String(resolvedViewerCount) + " viewers configured");
@@ -416,216 +411,225 @@ bool unifiDismissCall(const String& deviceId, const String& requestId) {
   return success;
 }
 
-// Streaming topology fetch - parses directly from HTTP stream with filtering
-// This uses minimal memory by only extracting the fields we need
-static bool fetchTopologyStreaming(JsonDocument& outputDoc) {
-  WiFiClientSecure apiClient;
-  apiClient.setInsecure();
-  apiClient.setTimeout(30000);
+// =============================================================================
+// Developer-API context (Bearer token, port unifiPort)
+//
+// All requests go through sendDeveloperRequest(). It opens a fresh
+// WiFiClientSecure to <host>:<unifiPort>, sends the Bearer token, and parses
+// the JSON response (optionally with a filter for large payloads).
+// It MUST NOT touch csrfToken / sessionCookie / isLoggedIn — those belong to
+// the legacy context.
+// =============================================================================
 
-  log("UniFi: Heap before fetch: " + String(ESP.getFreeHeap()));
+// Returns true if the request succeeded (HTTP 2xx and JSON parsed).
+// The parsed body is written to outDoc; the HTTP status is written to outStatus.
+// `filter` (optional) reduces memory by extracting only the listed fields.
+static bool sendDeveloperRequest(const char* method,
+                                 const String& path,
+                                 const String& body,
+                                 JsonDocument& outDoc,
+                                 int& outStatus,
+                                 const JsonDocument* filter = nullptr) {
+  outStatus = 0;
+  outDoc.clear();
 
-  if (!apiClient.connect(appConfig.unifiHost, 443)) {
-    log("UniFi: Connection failed");
+  if (strlen(appConfig.unifiApiToken) == 0) {
+    log("UniFi[dev]: API token not configured");
+    unifiLastError = "API token not configured";
     return false;
   }
 
-  String path = "/proxy/access/api/v2/devices/topology4";
+  uint16_t port = appConfig.unifiPort > 0 ? appConfig.unifiPort : 12445;
 
-  apiClient.println("GET " + path + " HTTP/1.1");
-  apiClient.println("Host: " + String(appConfig.unifiHost));
+  WiFiClientSecure apiClient;
+  apiClient.setInsecure();
+  apiClient.setTimeout(15000);
+
+  if (!apiClient.connect(appConfig.unifiHost, port)) {
+    log(String("UniFi[dev]: ") + method + " " + path + " - connect to " +
+        String(appConfig.unifiHost) + ":" + String(port) + " failed");
+    unifiLastError = "Cannot reach controller (developer API)";
+    return false;
+  }
+
+  apiClient.println(String(method) + " " + path + " HTTP/1.1");
+  apiClient.println("Host: " + String(appConfig.unifiHost) + ":" + String(port));
+  apiClient.println("Authorization: Bearer " + String(appConfig.unifiApiToken));
   apiClient.println("Accept: application/json");
-  apiClient.println("X-Csrf-Token: " + csrfToken);
-  apiClient.println("Cookie: TOKEN=" + sessionCookie);
+  if (body.length() > 0) {
+    apiClient.println("Content-Type: application/json");
+    apiClient.println("Content-Length: " + String(body.length()));
+  }
   apiClient.println("Connection: close");
   apiClient.println();
+  if (body.length() > 0) {
+    apiClient.print(body);
+  }
 
-  unsigned long timeout = millis() + 30000;
-  bool isChunked = false;
-  int httpStatus = 0;
-
-  // Read status line
-  if (apiClient.connected()) {
-    String statusLine = apiClient.readStringUntil('\n');
-    log("UniFi: Status: " + statusLine);
+  // Parse status line
+  String statusLine = apiClient.readStringUntil('\n');
+  {
     int spaceIdx = statusLine.indexOf(' ');
     if (spaceIdx > 0) {
       int endIdx = statusLine.indexOf(' ', spaceIdx + 1);
       if (endIdx > 0) {
-        httpStatus = statusLine.substring(spaceIdx + 1, endIdx).toInt();
+        outStatus = statusLine.substring(spaceIdx + 1, endIdx).toInt();
       }
     }
   }
 
-  // Read headers
-  while (millis() < timeout && apiClient.connected()) {
+  // Walk headers, watch for chunked transfer encoding
+  bool isChunked = false;
+  unsigned long headerDeadline = millis() + 5000;
+  while (millis() < headerDeadline && apiClient.connected()) {
     String line = apiClient.readStringUntil('\n');
     line.trim();
     if (line.length() == 0) break;
-
-    String lowerLine = line;
-    lowerLine.toLowerCase();
-    if (lowerLine.startsWith("transfer-encoding:") && lowerLine.indexOf("chunked") > 0) {
+    String lower = line; lower.toLowerCase();
+    if (lower.startsWith("transfer-encoding:") && lower.indexOf("chunked") > 0) {
       isChunked = true;
     }
   }
 
-  if (httpStatus >= 400) {
-    apiClient.stop();
-    log("UniFi: HTTP error " + String(httpStatus));
-    if (isAuthFailure(httpStatus)) {
-      handleAuthFailure(httpStatus);
-    }
-    return false;
-  }
-
-  // Create filter to only extract fields we need - drastically reduces memory usage
-  // Structure: data[] -> floors[] -> doors[] -> device_groups[][]
-  // Only fetch reader devices (viewers are ignored by UniFi API)
-  JsonDocument filter;
-  filter["data"][0]["floors"][0]["name"] = true;
-  filter["data"][0]["floors"][0]["doors"][0]["name"] = true;
-  filter["data"][0]["floors"][0]["doors"][0]["device_groups"][0][0]["device_type"] = true;
-  filter["data"][0]["floors"][0]["doors"][0]["device_groups"][0][0]["unique_id"] = true;
-  filter["data"][0]["floors"][0]["doors"][0]["device_groups"][0][0]["name"] = true;
-  filter["data"][0]["floors"][0]["doors"][0]["device_groups"][0][0]["mac"] = true;
-
-  log("UniFi: Parsing stream with filter (chunked=" + String(isChunked ? "yes" : "no") + ")");
-  log("UniFi: Heap before parse: " + String(ESP.getFreeHeap()));
-
-  // Wrap the client in ChunkedStream to handle chunked transfer encoding
+  // Parse JSON body
   ChunkedStream stream(apiClient, isChunked);
-
-  // Parse directly from stream with filter - only extracts specified fields
-  JsonDocument inputDoc;
-  DeserializationError error = deserializeJson(
-    inputDoc,
-    stream,
-    DeserializationOption::Filter(filter),
-    DeserializationOption::NestingLimit(30)
-  );
-
-  bool streamFinished = stream.isFinished();
-  bool clientConnected = apiClient.connected();
+  DeserializationError err;
+  if (filter) {
+    err = deserializeJson(outDoc, stream,
+                          DeserializationOption::Filter(*filter),
+                          DeserializationOption::NestingLimit(20));
+  } else {
+    err = deserializeJson(outDoc, stream,
+                          DeserializationOption::NestingLimit(20));
+  }
   apiClient.stop();
 
-  log("UniFi: Heap after parse: " + String(ESP.getFreeHeap()));
-  log("UniFi: Stream finished: " + String(streamFinished ? "yes" : "no") +
-             ", client connected: " + String(clientConnected ? "yes" : "no"));
+  // Diagnostic: method + path + status + JSON code (if present)
+  const char* code = outDoc["code"] | "";
+  log(String("UniFi[dev]: ") + method + " " + path +
+      " -> HTTP " + String(outStatus) +
+      (strlen(code) > 0 ? (String(" code=") + code) : String("")));
 
-  if (error) {
-    log("UniFi: Parse error: " + String(error.c_str()));
-
-    // Debug: show what was parsed
-    String partial;
-    serializeJson(inputDoc, partial);
-    if (partial.length() > 200) {
-      partial = partial.substring(0, 200) + "...";
+  if (err) {
+    log(String("UniFi[dev]: parse error: ") + err.c_str());
+    if (outStatus < 200 || outStatus >= 300) {
+      // status was already bad; treat as overall failure
     }
-    log("UniFi: Partial data: " + partial);
-
     return false;
   }
 
-  // Build output document with reader devices only
-  outputDoc["success"] = true;
-  JsonArray readers = outputDoc["readers"].to<JsonArray>();
-
-  int deviceCount = 0;
-
-  // Navigate: data[] -> floors[] -> doors[] -> device_groups[][]
-  JsonArray dataArray = inputDoc["data"];
-  for (JsonObject site : dataArray) {
-    JsonArray floors = site["floors"];
-    for (JsonObject floor : floors) {
-      const char* floorName = floor["name"] | "";
-
-      JsonArray doors = floor["doors"];
-      for (JsonObject door : doors) {
-        const char* doorName = door["name"] | "";
-
-        JsonArray deviceGroups = door["device_groups"];
-        for (JsonArray group : deviceGroups) {
-          for (JsonObject device : group) {
-            const char* deviceType = device["device_type"] | "";
-            const char* deviceId = device["unique_id"] | "";
-            const char* deviceName = device["name"] | "";
-            const char* mac = device["mac"] | "";
-
-            if (strlen(deviceId) == 0) continue;
-
-            deviceCount++;
-
-            // Check if it's a reader device (can be doorbell source)
-            // Match UA-G2, UA-G3, and any device with "Reader" in the name
-            bool isReader = (strstr(deviceType, "UA-G2") != nullptr ||
-                             strstr(deviceType, "UA-G3") != nullptr ||
-                             strstr(deviceType, "Reader") != nullptr);
-
-            if (isReader) {
-              // Build location string from floor/door names
-              String location = String(floorName);
-              if (strlen(doorName) > 0) {
-                if (location.length() > 0) location += " / ";
-                location += doorName;
-              }
-
-              JsonObject reader = readers.add<JsonObject>();
-              reader["id"] = deviceId;
-              reader["name"] = deviceName;
-              reader["mac"] = mac;
-              reader["type"] = deviceType;
-              reader["location"] = location;
-            }
-          }
-        }
-      }
-    }
+  if (outStatus >= 200 && outStatus < 300) {
+    return true;
   }
 
-  log("UniFi: Found " + String(deviceCount) + " devices, " + String(readers.size()) + " readers");
-
-  return true;
+  // Map known error codes from the JSON body to a user-friendly message.
+  String codeStr = String(code);
+  if (codeStr == "CODE_AUTH_FAILED" || codeStr == "CODE_ACCESS_TOKEN_INVALID" || outStatus == 401) {
+    unifiLastError = "Token rejected";
+  } else if (codeStr == "CODE_DEVICE_API_NOT_SUPPORTED" || outStatus == 404) {
+    unifiLastError = "Controller does not support developer API (requires UniFi Access 4.0.10+)";
+  } else if (codeStr == "CODE_DEVICE_DEVICE_OFFLINE") {
+    unifiLastError = "Reader is offline";
+  } else if (codeStr == "CODE_DEVICE_DEVICE_NOT_FOUND") {
+    unifiLastError = "Reader not found on controller";
+  } else if (outStatus == 403) {
+    unifiLastError = "Token lacks required permission";
+  } else if (codeStr.length() > 0) {
+    unifiLastError = String("Developer API error: ") + codeStr;
+  } else {
+    unifiLastError = String("Developer API HTTP ") + String(outStatus);
+  }
+  return false;
 }
 
-String unifiGetTopology() {
-  if (!isLoggedIn) {
-    log("UniFi: Cannot get topology - not logged in");
-    return "{\"success\":false,\"message\":\"Not logged in\"}";
+String unifiGetReaders() {
+  if (!hasUnifiApiToken()) {
+    return "{\"success\":false,\"message\":\"API token not configured\"}";
   }
 
+  // Filter: only fields we render. The controller actually returns far more
+  // (capabilities, location_id, connected_uah_id, etc.) — capabilities is the
+  // one we MUST keep because it drives the doorbell-capable filter.
+  JsonDocument filter;
+  filter["data"][0][0]["id"] = true;
+  filter["data"][0][0]["name"] = true;
+  filter["data"][0][0]["alias"] = true;
+  filter["data"][0][0]["type"] = true;
+  filter["data"][0][0]["is_online"] = true;
+  filter["data"][0][0]["capabilities"] = true;
+
   const int maxRetries = 3;
-
   for (int attempt = 1; attempt <= maxRetries; attempt++) {
-    log("UniFi: Fetching device topology (attempt " + String(attempt) + "/" + String(maxRetries) + ")...");
+    log("UniFi[dev]: Fetching device list (attempt " + String(attempt) + "/" + String(maxRetries) + ")");
 
-    JsonDocument outputDoc;
-    bool success = fetchTopologyStreaming(outputDoc);
+    JsonDocument inputDoc;
+    int httpStatus = 0;
+    bool ok = sendDeveloperRequest("GET",
+                                   "/api/v1/developer/devices?refresh=true",
+                                   "", inputDoc, httpStatus, &filter);
 
-    if (!success) {
-      log("UniFi: Attempt " + String(attempt) + " failed");
-      if (attempt < maxRetries) {
-        delay(1000);  // Wait before retry
-        continue;
-      }
-      return "{\"success\":false,\"message\":\"Failed after " + String(maxRetries) + " attempts\",\"canRetry\":true}";
+    if (!ok) {
+      if (attempt < maxRetries) { delay(1000); continue; }
+      String errMsg = unifiLastError.length() > 0 ? unifiLastError : "Failed to load devices";
+      JsonDocument out;
+      out["success"] = false;
+      out["message"] = errMsg;
+      out["canRetry"] = true;
+      String s; serializeJson(out, s);
+      developerApiReady = false;
+      return s;
     }
 
-    // Success - serialize and return
-    log("UniFi: Successfully fetched topology on attempt " + String(attempt));
+    // Build response: filter to devices whose `capabilities` array contains "remote_call".
+    JsonDocument outputDoc;
+    outputDoc["success"] = true;
+    JsonArray readers = outputDoc["readers"].to<JsonArray>();
+
+    int totalDevices = 0;
+    JsonArray dataArray = inputDoc["data"];
+    for (JsonArray group : dataArray) {
+      for (JsonObject device : group) {
+        totalDevices++;
+
+        const char* deviceId = device["id"] | "";
+        if (strlen(deviceId) == 0) continue;
+
+        bool canRing = false;
+        JsonArray caps = device["capabilities"];
+        for (JsonVariant cap : caps) {
+          const char* s = cap.as<const char*>();
+          if (s && strcmp(s, "remote_call") == 0) { canRing = true; break; }
+        }
+        if (!canRing) continue;
+
+        JsonObject reader = readers.add<JsonObject>();
+        reader["id"] = deviceId;
+        reader["name"] = device["name"] | "";
+        reader["alias"] = device["alias"] | "";
+        reader["type"] = device["type"] | "";
+        // is_online may be absent on older firmware — default true so a missing
+        // field doesn't accidentally grey out a working reader.
+        reader["is_online"] = device["is_online"] | true;
+      }
+    }
+
+    log("UniFi[dev]: " + String(totalDevices) + " devices, " +
+        String(readers.size()) + " doorbell-capable readers");
+    developerApiReady = true;
 
     String output;
     serializeJson(outputDoc, output);
     return output;
   }
 
-  // Should not reach here, but return error just in case
+  // Should not reach here.
   return "{\"success\":false,\"message\":\"Unexpected error\",\"canRetry\":true}";
 }
 
 bool unifiTriggerRing() {
-  if (!isLoggedIn) {
-    log("UniFi: Cannot trigger - not logged in");
+  if (!hasUnifiApiToken()) {
+    log("UniFi[dev]: Cannot trigger - API token not configured");
+    unifiLastError = "API token not configured";
     return false;
   }
 
@@ -633,97 +637,37 @@ bool unifiTriggerRing() {
   if (deviceId.length() == 0) {
     deviceId = appConfig.doorbellDeviceId;
   }
-
-  log("UniFi: Triggering doorbell ring on device: " + deviceId);
-
-  String requestId = generateRandomString(32);
-  String roomId = "PR-" + generateUUID();
-  time_t now = time(nullptr);
-
-  JsonDocument doc;
-  doc["request_id"] = requestId;
-  doc["agora_channel"] = roomId;
-  doc["controller_id"] = deviceId;
-  doc["device_id"] = deviceId;
-  doc["device_name"] = appConfig.doorbellDeviceName;
-  doc["door_name"] = appConfig.doorbellDoorName;
-  doc["floor_name"] = "";
-  doc["in_or_out"] = "in";
-  doc["mode"] = "webrtc";
-  doc["create_time_uid"] = now;
-  doc["create_time"] = now;
-  doc["room_id"] = roomId;
-
-  JsonArray viewers = doc["notify_door_guards"].to<JsonArray>();
-  for (int i = 0; i < resolvedViewerCount; i++) {
-    viewers.add(resolvedViewerIds[i]);
-  }
-
-  String body;
-  serializeJson(doc, body);
-
-  log("UniFi: Viewers in notify list: " + String(resolvedViewerCount));
-
-  String path = "/proxy/access/api/v2/device/" + deviceId + "/remote_call";
-
-  WiFiClientSecure apiClient;
-  apiClient.setInsecure();
-  apiClient.setTimeout(10000);
-
-  if (!apiClient.connect(appConfig.unifiHost, 443)) {
-    log("UniFi: Connection failed");
+  if (deviceId.length() == 0) {
+    log("UniFi[dev]: Cannot trigger - no doorbell device id configured");
+    unifiLastError = "Doorbell device not configured";
     return false;
   }
 
-  apiClient.println("POST " + path + " HTTP/1.1");
-  apiClient.println("Host: " + String(appConfig.unifiHost));
-  apiClient.println("Content-Type: application/json");
-  apiClient.println("Content-Length: " + String(body.length()));
-  apiClient.println("X-Csrf-Token: " + csrfToken);
-  apiClient.println("Cookie: TOKEN=" + sessionCookie);
-  apiClient.println("Connection: close");
-  apiClient.println();
-  apiClient.print(body);
+  log("UniFi[dev]: Triggering doorbell on device: " + deviceId);
 
-  String statusLine = apiClient.readStringUntil('\n');
-  int statusCode = 0;
-  int spaceIdx = statusLine.indexOf(' ');
-  if (spaceIdx > 0) {
-    int endIdx = statusLine.indexOf(' ', spaceIdx + 1);
-    if (endIdx > 0) {
-      statusCode = statusLine.substring(spaceIdx + 1, endIdx).toInt();
-    }
+  // Always send cancel:true so a stale ring (from a failed previous trigger)
+  // is killed before the fresh one starts. Empirically the controller rings
+  // a fresh call regardless of whether one was active.
+  static const String body = "{\"cancel\":true}";
+  String path = "/api/v1/developer/devices/" + deviceId + "/doorbell";
+
+  JsonDocument resp;
+  int httpStatus = 0;
+  bool ok = sendDeveloperRequest("POST", path, body, resp, httpStatus);
+
+  if (ok) {
+    log("UniFi[dev]: Doorbell ring triggered");
+    developerApiReady = true;
+    return true;
   }
 
-  while (apiClient.available()) {
-    apiClient.read();
-  }
-  apiClient.stop();
-
-  bool success = (statusCode >= 200 && statusCode < 300);
-  if (success) {
-    log("UniFi: Doorbell ring triggered");
-  } else {
-    log("UniFi: Trigger failed, status: " + String(statusCode));
-    if (isAuthFailure(statusCode)) {
-      handleAuthFailure(statusCode);
-    }
-  }
-
-  return success;
+  log("UniFi[dev]: Trigger failed: " + unifiLastError);
+  return false;
 }
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-String normalizeMAC(const String& mac) {
-  String normalized = mac;
-  normalized.replace(":", "");
-  normalized.replace("-", "");
-  normalized.toLowerCase();
-  return normalized;
-}
 
 String generateRandomString(int length) {
   const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -766,14 +710,6 @@ static String readHttpResponse(WiFiClientSecure& client) {
   }
 
   return response;
-}
-
-static int extractStatusCode(const String& response) {
-  int spaceIdx = response.indexOf(' ');
-  if (spaceIdx < 0) return 0;
-  int endIdx = response.indexOf(' ', spaceIdx + 1);
-  if (endIdx < 0) return 0;
-  return response.substring(spaceIdx + 1, endIdx).toInt();
 }
 
 static String extractHeader(const String& response, const String& headerName) {

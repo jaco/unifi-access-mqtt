@@ -10,9 +10,12 @@ interface SetupWizardProps {
 export function SetupWizard({ config }: SetupWizardProps) {
   const [step, setStep] = useState(1)
   const [host, setHost] = useState(config.unifi?.host ?? '')
+  const [port, setPort] = useState<number>(config.unifi?.port ?? 12445)
   const [username, setUsername] = useState(config.unifi?.username ?? '')
   const [password, setPassword] = useState('')
+  const [apiToken, setApiToken] = useState('')
   const [hasExistingPassword, setHasExistingPassword] = useState(false)
+  const [hasExistingToken, setHasExistingToken] = useState(false)
   const [certificate, setCertificate] = useState('')
   const [certStatus, setCertStatus] = useState<{ type: string; message: string } | null>(null)
   const [fetchingCert, setFetchingCert] = useState(false)
@@ -25,9 +28,20 @@ export function SetupWizard({ config }: SetupWizardProps) {
   const [doorName, setDoorName] = useState(config.doorbell?.doorName ?? '')
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ type: string; message: string } | null>(null)
+  const [testRingStatus, setTestRingStatus] = useState<{ type: string; message: string } | null>(null)
+  const [testingRing, setTestingRing] = useState(false)
+  const [loginCheck, setLoginCheck] = useState<{ ok: boolean; message: string } | null>(null)
+  const [tokenCheck, setTokenCheck] = useState<{ ok: boolean; message: string } | null>(null)
+
+  // True when a returning user has legacy creds saved but no API token yet —
+  // i.e. they need to add the token to enable trigger via the official API.
+  const needsTokenUpgrade = !!config.unifi?.host
+    && !!config.unifi?.username
+    && config.unifi?.apiTokenSet === false
 
   useEffect(() => {
     setHost(config.unifi?.host ?? '')
+    setPort(config.unifi?.port ?? 12445)
     setUsername(config.unifi?.username ?? '')
     setSelectedReader(config.doorbell?.deviceId ?? '')
     setDeviceName(config.doorbell?.deviceName ?? '')
@@ -35,6 +49,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
     if (config.unifi?.password?.includes('*')) {
       setHasExistingPassword(true)
     }
+    setHasExistingToken(!!config.unifi?.apiTokenSet)
   }, [config])
 
   useEffect(() => {
@@ -85,23 +100,44 @@ export function SetupWizard({ config }: SetupWizardProps) {
   }
 
   const handleTestConnection = async () => {
-    setCertStatus({ type: 'info', message: 'Testing connection...' })
+    setCertStatus({ type: 'info', message: 'Testing connection (both contexts)...' })
     const result = await api.testConnection()
     setCertStatus({ type: result.success ? 'success' : 'error', message: result.message })
+    if (result.token) setTokenCheck(result.token)
+    if (result.login) setLoginCheck(result.login)
+  }
+
+  const handleTestRing = async () => {
+    setTestingRing(true)
+    setTestRingStatus({ type: 'info', message: 'Triggering test ring...' })
+    try {
+      const result = await api.triggerRing()
+      setTestRingStatus({
+        type: result.success ? 'success' : 'error',
+        message: result.success ? 'Reader rang successfully.' : (result.message ?? 'Ring failed.')
+      })
+    } catch (err) {
+      setTestRingStatus({ type: 'error', message: 'Error: ' + (err as Error).message })
+    } finally {
+      setTestingRing(false)
+    }
   }
 
   const handleNext = async () => {
     if (step === 1) {
       if (!host || !username || (!password && !hasExistingPassword)) {
-        alert('Please fill in all UniFi Access fields')
+        alert('Please fill in host, username, and password')
+        return
+      }
+      if (!apiToken && !hasExistingToken) {
+        alert('Please paste an API token (created in UniFi Portal: Access > Settings > General > Advanced > API Token)')
         return
       }
       const configUpdate: Partial<Config> = {
-        unifi: { host, username }
+        unifi: { host, port, username }
       }
-      if (password) {
-        configUpdate.unifi!.password = password
-      }
+      if (password) configUpdate.unifi!.password = password
+      if (apiToken) configUpdate.unifi!.apiToken = apiToken
       await api.saveConfig(configUpdate)
     }
 
@@ -130,7 +166,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
     setSaveStatus({ type: 'info', message: 'Saving configuration...' })
 
     const configUpdate: Partial<Config> = {
-      unifi: { host, username },
+      unifi: { host, port, username },
       doorbell: {
         deviceId: selectedReader,
         deviceName,
@@ -138,9 +174,8 @@ export function SetupWizard({ config }: SetupWizardProps) {
       }
     }
 
-    if (password) {
-      configUpdate.unifi!.password = password
-    }
+    if (password) configUpdate.unifi!.password = password
+    if (apiToken) configUpdate.unifi!.apiToken = apiToken
 
     try {
       await api.saveConfig(configUpdate)
@@ -182,8 +217,21 @@ export function SetupWizard({ config }: SetupWizardProps) {
         <div class="wizard-content">
           <h3 style={{ marginBottom: '8px' }}>Connect to UniFi Access</h3>
           <p class="form-hint" style={{ marginBottom: '24px' }}>
-            Create a local user in UniFi Access (Settings &gt; Admins &gt; Add Admin) with at least "View Only" permissions.
+            This firmware uses two credentials: an <strong>API token</strong> for the official developer API
+            (used to trigger rings — requires UniFi Access 4.0.10+) and your <strong>username/password</strong> for
+            the legacy endpoint that cleanly cancels an active ring (used for door-contact dismiss).
           </p>
+
+          {needsTokenUpgrade && (
+            <div class="alert alert-info" style={{ marginBottom: '20px' }}>
+              <div>
+                <strong>Action required:</strong> add an API token to enable doorbell triggering.
+                Your existing username/password is preserved and continues to work for dismiss.
+                Create a token in the UniFi Portal: <em>Access &gt; Settings &gt; General &gt; Advanced &gt; API Token</em>.
+              </div>
+            </div>
+          )}
+
           <div class="form-group">
             <label>UniFi Access Host</label>
             <input
@@ -192,7 +240,31 @@ export function SetupWizard({ config }: SetupWizardProps) {
               value={host}
               onInput={(e) => setHost((e.target as HTMLInputElement).value)}
             />
-            <p class="form-hint">IP address or hostname of your UniFi Access controller</p>
+            <p class="form-hint">IP address or hostname of your UniFi Access controller (no scheme).</p>
+          </div>
+          <div class="form-group">
+            <label>Developer-API Port</label>
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={port}
+              onInput={(e) => setPort(Number((e.target as HTMLInputElement).value) || 12445)}
+            />
+            <p class="form-hint">Default <code>12445</code>. The legacy endpoints continue to use 443.</p>
+          </div>
+          <div class="form-group">
+            <label>API Token</label>
+            <input
+              type="password"
+              placeholder={hasExistingToken ? 'Token is set (leave blank to keep)' : 'Paste your API token here'}
+              value={apiToken}
+              onInput={(e) => setApiToken((e.target as HTMLInputElement).value)}
+            />
+            <p class="form-hint">
+              Create at <em>UniFi Portal &gt; Access &gt; Settings &gt; General &gt; Advanced &gt; API Token</em>.
+              Required scopes: <code>view:device</code>, <code>edit:device</code>.
+            </p>
           </div>
           <div class="form-group">
             <label>Username</label>
@@ -202,6 +274,7 @@ export function SetupWizard({ config }: SetupWizardProps) {
               value={username}
               onInput={(e) => setUsername((e.target as HTMLInputElement).value)}
             />
+            <p class="form-hint">Legacy local user (Access &gt; Admins &gt; Add Admin). Needed for dismiss only.</p>
           </div>
           <div class="form-group">
             <label>Password</label>
@@ -274,27 +347,35 @@ export function SetupWizard({ config }: SetupWizardProps) {
 
           {!loadingReaders && readers.length > 0 && (
             <div class="device-list">
-              {readers.map(device => (
-                <div
-                  key={device.id}
-                  class={`device-item ${selectedReader === device.id ? 'selected' : ''}`}
-                  onClick={() => {
-                    setSelectedReader(device.id)
-                    if (!deviceName) setDeviceName(device.name)
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="reader"
-                    checked={selectedReader === device.id}
-                    onChange={() => {}}
-                  />
-                  <div class="device-info">
-                    <div class="name">{device.name || 'Unnamed Device'}</div>
-                    <div class="meta">{device.type} - {device.mac}</div>
+              {readers.map(device => {
+                const offline = device.is_online === false
+                const display = device.alias || device.name || 'Unnamed Device'
+                const subtitle = device.alias && device.name ? `${device.name} · ${device.type}` : device.type
+                return (
+                  <div
+                    key={device.id}
+                    class={`device-item ${selectedReader === device.id ? 'selected' : ''}`}
+                    style={offline ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                    onClick={() => {
+                      if (offline) return
+                      setSelectedReader(device.id)
+                      if (!deviceName) setDeviceName(display)
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="reader"
+                      checked={selectedReader === device.id}
+                      disabled={offline}
+                      onChange={() => {}}
+                    />
+                    <div class="device-info">
+                      <div class="name">{display}{offline && ' (offline)'}</div>
+                      <div class="meta">{subtitle}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
@@ -373,12 +454,37 @@ export function SetupWizard({ config }: SetupWizardProps) {
           <div class="alert alert-info" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
             <strong>Configuration Summary:</strong>
             <div style={{ marginTop: '12px', color: 'var(--text-secondary)' }}>
-              <div style={{ marginBottom: '8px' }}><strong>UniFi Host:</strong><br/>{host}</div>
-              <div><strong>Doorbell Device:</strong><br/>{
-                readers.find(r => r.id === selectedReader)?.name ?? selectedReader ?? 'Not selected'
+              <div style={{ marginBottom: '8px' }}><strong>UniFi Host:</strong><br/>{host}:{port}</div>
+              <div style={{ marginBottom: '8px' }}><strong>Doorbell Device:</strong><br/>{
+                (() => {
+                  const r = readers.find(r => r.id === selectedReader)
+                  return r ? (r.alias || r.name) : (selectedReader || 'Not selected')
+                })()
               }</div>
+              <div style={{ marginBottom: '4px' }}>
+                <strong>Trigger (developer API):</strong>{' '}
+                {tokenCheck === null ? <em>not tested</em> : tokenCheck.ok ? '✓ ' + tokenCheck.message : '✗ ' + tokenCheck.message}
+              </div>
+              <div>
+                <strong>Dismiss (legacy login):</strong>{' '}
+                {loginCheck === null ? <em>not tested</em> : loginCheck.ok ? '✓ ' + loginCheck.message : '✗ ' + loginCheck.message}
+              </div>
             </div>
           </div>
+
+          <div class="btn-group" style={{ marginTop: '16px' }}>
+            <button class="btn btn-secondary" onClick={handleTestConnection}>Re-test credentials</button>
+            <button class="btn btn-secondary" onClick={handleTestRing} disabled={testingRing || !selectedReader}>
+              {testingRing && <span class="spinner"></span>}
+              Test ring
+            </button>
+          </div>
+
+          {testRingStatus && (
+            <div class={`alert alert-${testRingStatus.type}`} style={{ marginTop: '12px' }}>
+              {testRingStatus.message}
+            </div>
+          )}
 
           {saveStatus && (
             <div class={`alert alert-${saveStatus.type}`} style={{ marginTop: '16px' }}>

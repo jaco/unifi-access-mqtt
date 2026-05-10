@@ -454,38 +454,79 @@ void setupWebServer() {
     });
 
     // API: Test UniFi connection
+    //
+    // Probes BOTH auth contexts independently and reports per-credential
+    // status so the wizard can flag exactly which credential is wrong.
+    //   - login:  legacy username/password — used for dismiss
+    //   - token:  developer-API Bearer    — used for trigger + discovery
     server.on("/api/test", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (!checkAuth(request)) { sendUnauthorized(request); return; }
 
-        if (!hasUnifiCredentials()) {
-            request->send(400, "application/json", "{\"success\":false,\"message\":\"No UniFi credentials configured\"}");
-            return;
-        }
+        log("WebServer: Testing UniFi connection (both contexts)...");
 
-        log("WebServer: Testing UniFi connection...");
+        JsonDocument out;
+        bool tokenOk = false;
+        bool loginOk = false;
+        String tokenMsg;
+        String loginMsg;
 
-        // Try to login
-        if (unifiLogin()) {
-            request->send(200, "application/json", "{\"success\":true,\"message\":\"Connection successful!\"}");
+        // Token probe: GET /devices through unifiGetReaders().
+        if (hasUnifiApiToken()) {
+            String result = unifiGetReaders();
+            JsonDocument parsed;
+            DeserializationError e = deserializeJson(parsed, result);
+            if (!e && parsed["success"].as<bool>()) {
+                tokenOk = true;
+                tokenMsg = "OK (" + String((int)parsed["readers"].size()) + " doorbell-capable readers)";
+            } else {
+                tokenMsg = parsed["message"].is<const char*>() ? parsed["message"].as<String>() : String("Token probe failed");
+            }
         } else {
-            request->send(200, "application/json", "{\"success\":false,\"message\":\"Login failed. Check credentials and certificate.\"}");
+            tokenMsg = "API token not configured";
         }
+
+        // Login probe: legacy username/password.
+        if (hasUnifiCredentials()) {
+            loginOk = unifiLogin();
+            loginMsg = loginOk ? "OK" : (unifiLastError.length() > 0 ? unifiLastError : "Login failed");
+        } else {
+            loginMsg = "Username/password not configured";
+        }
+
+        out["success"] = tokenOk && loginOk;
+        out["token"]["ok"] = tokenOk;
+        out["token"]["message"] = tokenMsg;
+        out["login"]["ok"] = loginOk;
+        out["login"]["message"] = loginMsg;
+        if (tokenOk && loginOk) {
+            out["message"] = "Connection successful!";
+        } else if (!tokenOk && !loginOk) {
+            out["message"] = "Both credentials failed.";
+        } else if (!tokenOk) {
+            out["message"] = "API token rejected — trigger will not work.";
+        } else {
+            out["message"] = "Username or password rejected — dismiss will not work.";
+        }
+
+        String json;
+        serializeJson(out, json);
+        request->send(200, "application/json", json);
     });
 
-    // API: Get UniFi device topology
+    // API: Get UniFi device list (doorbell-capable readers).
+    // Backed by the official developer API. Falls through with a clear error
+    // if the API token is missing — does NOT fall back to the legacy login.
     server.on("/api/topology", HTTP_GET, [](AsyncWebServerRequest* request) {
         if (!checkAuth(request)) { sendUnauthorized(request); return; }
 
-        if (!isLoggedIn) {
-            // Try to login first
-            if (!unifiLogin()) {
-                request->send(400, "application/json", "{\"success\":false,\"message\":\"Not connected to UniFi\"}");
-                return;
-            }
+        if (!hasUnifiApiToken()) {
+            request->send(400, "application/json",
+                "{\"success\":false,\"message\":\"API token not configured\"}");
+            return;
         }
 
-        String topology = unifiGetTopology();
-        request->send(200, "application/json", topology);
+        String readers = unifiGetReaders();
+        request->send(200, "application/json", readers);
     });
 
     // API: Get configuration (passwords masked)
@@ -812,9 +853,13 @@ static String getStatusJson() {
         }
     #endif
 
-    // UniFi
+    // UniFi — separate flags per auth context so the UI can flag
+    // exactly what's missing (token vs. legacy login).
     doc["unifi"]["configured"] = hasUnifiCredentials();
-    doc["unifi"]["loggedIn"] = isLoggedIn;
+    doc["unifi"]["apiTokenSet"] = hasUnifiApiToken();
+    doc["unifi"]["setupIncomplete"] = unifiSetupIncomplete();
+    doc["unifi"]["loggedIn"] = isLoggedIn;             // legacy context
+    doc["unifi"]["developerApiReady"] = developerApiReady;  // dev-api context
     doc["unifi"]["wsConnected"] = (bool)wsConnected;
     doc["unifi"]["wsReconnects"] = getWsReconnectCount();
 

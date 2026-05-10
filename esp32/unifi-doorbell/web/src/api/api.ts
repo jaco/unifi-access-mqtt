@@ -1,4 +1,4 @@
-import type { Config, TopologyResponse, VersionInfo, FirmwareManifest, Status } from '../types'
+import type { Config, TopologyResponse, VersionInfo, FirmwareManifest, Status, ConnectionTestResult } from '../types'
 
 const GITHUB_PAGES_BASE = 'https://mqtt-home.github.io/unifi-access-mqtt'
 
@@ -78,7 +78,7 @@ const api = {
     return res.json()
   },
 
-  async testConnection(): Promise<{ success: boolean; message: string }> {
+  async testConnection(): Promise<ConnectionTestResult> {
     const res = await fetch('/api/test', { method: 'POST' })
     return res.json()
   },

@@ -9,6 +9,7 @@
 #define CFG_MAX_HOST_LEN 64
 #define CFG_MAX_USERNAME_LEN 64
 #define CFG_MAX_DEVICE_ID_LEN 48
+#define CFG_MAX_API_TOKEN_LEN 96
 #define CFG_MAX_NAME_LEN 32
 #define CFG_MAX_TOPIC_LEN 128
 #define CFG_MAX_CERT_LEN 4096
@@ -75,6 +76,12 @@ struct AppConfig {
     char unifiHost[CFG_MAX_HOST_LEN];
     char unifiUsername[CFG_MAX_USERNAME_LEN];
     char unifiPassword[CFG_MAX_PASSWORD_LEN];
+    // Developer API (UniFi Access >= 4.0.10).
+    // Bearer token for the official API at https://<host>:<unifiPort>/api/v1/developer/...
+    // Used for trigger + device discovery. The legacy username/password above
+    // is still required for the dismiss path (POST /proxy/access/api/v2/.../reply_remote).
+    char unifiApiToken[CFG_MAX_API_TOKEN_LEN];
+    uint16_t unifiPort;
 
     // Doorbell device
     char doorbellDeviceId[CFG_MAX_DEVICE_ID_LEN];
@@ -126,8 +133,15 @@ void resetConfig();
 // Helper to check if WiFi credentials are set
 bool hasWifiCredentials();
 
-// Helper to check if UniFi credentials are set
+// Helper to check if UniFi credentials are set (legacy login, used for dismiss)
 bool hasUnifiCredentials();
+
+// Helper to check if a developer-API token is set (used for trigger + discovery)
+bool hasUnifiApiToken();
+
+// True when the controller config is missing pieces required for the new
+// developer-API flow (trigger + discovery). Drives the upgrade banner in the UI.
+bool unifiSetupIncomplete();
 
 // Get config as JSON (for web API, passwords masked)
 String getConfigJson(bool maskPasswords = true);

@@ -18,8 +18,14 @@ export interface Config {
   }
   unifi?: {
     host?: string
+    /** Developer-API port (default 12445). Legacy endpoints remain on 443. */
+    port?: number
     username?: string
     password?: string
+    /** Bearer API token for the official developer API. Write-only on POST. */
+    apiToken?: string
+    /** Read-only flag returned by GET /api/config — true if a token is saved. */
+    apiTokenSet?: boolean
   }
   doorbell?: {
     deviceId?: string
@@ -60,8 +66,11 @@ export interface Status {
   }
   unifi?: {
     wsConnected?: boolean
-    loggedIn?: boolean
-    configured?: boolean
+    loggedIn?: boolean              // legacy context (username/password)
+    developerApiReady?: boolean     // dev-api context (Bearer token)
+    configured?: boolean            // legacy creds present
+    apiTokenSet?: boolean           // API token present
+    setupIncomplete?: boolean       // legacy creds present, token missing
     error?: string
   }
   mqtt?: {
@@ -77,13 +86,26 @@ export interface TopologyDevice {
   id: string
   name: string
   type: string
-  mac: string
+  /** User-assigned display name from the controller (preferred for UI). */
+  alias?: string
+  /** Whether the device is currently online. */
+  is_online?: boolean
+  /** Legacy field — kept optional for backwards-compat with cached responses. */
+  mac?: string
 }
 
 export interface TopologyResponse {
   success: boolean
   message?: string
+  canRetry?: boolean
   readers?: TopologyDevice[]
+}
+
+export interface ConnectionTestResult {
+  success: boolean
+  message: string
+  token?: { ok: boolean; message: string }
+  login?: { ok: boolean; message: string }
 }
 
 export type Tab = 'status' | 'setup' | 'settings' | 'system'

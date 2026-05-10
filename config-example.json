@@ -9,7 +9,18 @@
         "host": "https://192.168.1.1",
         "username": "api-user",
         "password": "your-password",
-        "verify-ssl": false
+        "verify-ssl": false,
+        "doorbell": {
+            "sourceReader": "AA:BB:CC:DD:EE:FF",
+            "targetViewers": ["11:22:33:44:55:66"],
+            "dismissOnContact": [
+                {
+                    "topic": "zigbee2mqtt/eg_cont_haustuere",
+                    "field": "contact",
+                    "openValue": false
+                }
+            ]
+        }
     },
     "loglevel": "info"
 }

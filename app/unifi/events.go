@@ -82,8 +82,8 @@ func (e *EventListener) connect() error {
 		headers.Set("Cookie", cookieHeader)
 	}
 
-	logger.Debug("Connecting to WebSocket:", wsURL)
-	logger.Debug("WebSocket cookies:", cookieHeader)
+	logger.Debug("Connecting to WebSocket", "url", wsURL)
+	logger.Trace("WebSocket cookies", "header", cookieHeader)
 	if cookieHeader == "" {
 		logger.Warn("No cookies found for WebSocket connection - events may not work")
 	}
@@ -91,7 +91,7 @@ func (e *EventListener) connect() error {
 	conn, resp, err := dialer.Dial(wsURL, headers)
 	if err != nil {
 		if resp != nil {
-			logger.Error("WebSocket connection failed with status:", resp.StatusCode)
+			logger.Error("WebSocket connection failed", "status", resp.StatusCode)
 		}
 		return err
 	}
@@ -122,7 +122,7 @@ func (e *EventListener) readLoop() {
 			_, message, err := e.conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					logger.Error("WebSocket read error:", err)
+					logger.Error("WebSocket read error", "err", err)
 				}
 				return
 			}
@@ -144,7 +144,7 @@ func (e *EventListener) pingLoop() {
 		case <-ticker.C:
 			if e.conn != nil {
 				if err := e.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					logger.Debug("Ping failed:", err)
+					logger.Debug("Ping failed", "err", err)
 					return
 				}
 			}
@@ -168,27 +168,29 @@ func (e *EventListener) handleMessage(message []byte) {
 		return
 	}
 
-	// Log all non-heartbeat messages
-	logger.Debug("WebSocket message:", msgStr)
+	// Full payload only at trace level
+	logger.Trace("WebSocket message", "msg", msgStr)
 
 	// Enhanced logging for doorbell-related events (for reverse engineering)
 	if strings.Contains(msgStr, "remote_view") || strings.Contains(msgStr, "doorbell") || strings.Contains(msgStr, "remote_call") {
-		logger.Debug("Doorbell event:", msgStr)
+		logger.Trace("Doorbell event payload", "msg", msgStr)
 	}
 
 	// Skip non-JSON object messages
 	if !strings.HasPrefix(msgStr, "{") {
-		logger.Debug("Ignoring non-JSON WebSocket message:", msgStr)
+		logger.Debug("Ignoring non-JSON WebSocket message")
+		logger.Trace("non-JSON WebSocket payload", "msg", msgStr)
 		return
 	}
 
 	var event EventPacket
 	if err := json.Unmarshal(message, &event); err != nil {
-		logger.Debug("Failed to parse WebSocket message:", err, "raw:", msgStr)
+		logger.Debug("Failed to parse WebSocket message", "err", err)
+		logger.Trace("Unparsable WebSocket payload", "raw", msgStr)
 		return
 	}
 
-	logger.Debug("Received event:", event.Event, "(Object:", event.EventObjectID+")")
+	logger.Debug("Received event", "event", event.Event, "object", event.EventObjectID)
 	event.Timestamp = time.Now()
 
 	e.dispatchEvent(event)
@@ -249,12 +251,12 @@ func (e *EventListener) scheduleReconnect() {
 
 				// Re-login before reconnecting
 				if err := e.client.Login(); err != nil {
-					logger.Error("Failed to re-login:", err)
+					logger.Error("Failed to re-login", "err", err)
 					continue
 				}
 
 				if err := e.connect(); err != nil {
-					logger.Error("Failed to reconnect WebSocket:", err)
+					logger.Error("Failed to reconnect WebSocket", "err", err)
 					continue
 				}
 

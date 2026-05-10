@@ -3,7 +3,6 @@ package mqtt
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/mqtt-home/unifi-access-mqtt/unifi"
@@ -63,7 +62,7 @@ func (p *Publisher) PublishDoorState(door *unifi.Door) {
 		HasDoorbell: door.Device.HasCapability(unifi.CapabilityDoorbell),
 	}
 
-	logger.Info("Publishing door state to", topic, "lock="+door.LockStatus, "door="+door.DoorStatus)
+	logger.Info("Publishing door state", "topic", topic, "lock", door.LockStatus, "door", door.DoorStatus)
 	p.publish(topic, state)
 }
 
@@ -84,13 +83,13 @@ func (p *Publisher) PublishDoorbellState(door *unifi.Door) {
 	}
 
 	p.publish(topic, state)
-	logger.Debug("Published doorbell state for", door.Name, status)
+	logger.Debug("Published doorbell state", "door", door.Name, "status", status)
 }
 
 // PublishAllDoors publishes state for all doors
 func (p *Publisher) PublishAllDoors() {
 	doors := p.controller.GetDoors()
-	logger.Info("Publishing initial state for", strconv.Itoa(len(doors)), "doors")
+	logger.Info("Publishing initial state for doors", "count", len(doors))
 	for _, door := range doors {
 		p.PublishDoorState(door)
 		if door.Device.HasCapability(unifi.CapabilityDoorbell) {
@@ -108,7 +107,7 @@ func (p *Publisher) SubscribeToCommands() {
 		p.handleCommand(topic, payload)
 	})
 
-	logger.Info("Subscribed to command topic:", topic)
+	logger.Info("Subscribed to command topic", "topic", topic)
 }
 
 // handleCommand processes incoming MQTT commands
@@ -116,7 +115,7 @@ func (p *Publisher) handleCommand(topic string, payload []byte) {
 	// Extract door name from topic: baseTopic/{doorName}/set
 	parts := strings.Split(topic, "/")
 	if len(parts) < 2 {
-		logger.Warn("Invalid command topic:", topic)
+		logger.Warn("Invalid command topic", "topic", topic)
 		return
 	}
 
@@ -133,22 +132,22 @@ func (p *Publisher) handleCommand(topic string, payload []byte) {
 	}
 
 	if matchedDoor == nil {
-		logger.Warn("Unknown door in command:", doorName)
+		logger.Warn("Unknown door in command", "door", doorName)
 		return
 	}
 
 	var cmd Command
 	if err := json.Unmarshal(payload, &cmd); err != nil {
-		logger.Warn("Invalid command payload:", string(payload))
+		logger.Warn("Invalid command payload", "payload", string(payload))
 		return
 	}
 
-	logger.Info("Received command for", matchedDoor.Name, cmd.Action)
+	logger.Info("Received command", "door", matchedDoor.Name, "action", cmd.Action)
 
 	switch strings.ToLower(cmd.Action) {
 	case "unlock":
 		if err := p.controller.UnlockDoor(matchedDoor); err != nil {
-			logger.Error("Failed to unlock door", matchedDoor.Name, err)
+			logger.Error("Failed to unlock door", "door", matchedDoor.Name, "err", err)
 		}
 	case "lock":
 		// Note: UniFi Access doesn't support explicit lock commands via API
@@ -156,16 +155,16 @@ func (p *Publisher) handleCommand(topic string, payload []byte) {
 		logger.Warn("Lock command not supported - doors lock automatically after unlock timeout")
 	case "dismiss", "cancel", "end_call":
 		if err := p.controller.DismissDoorbellCall(matchedDoor); err != nil {
-			logger.Error("Failed to dismiss doorbell call", matchedDoor.Name, err)
+			logger.Error("Failed to dismiss doorbell call", "door", matchedDoor.Name, "err", err)
 		}
 	case "ring":
 		// Trigger a doorbell ring via the remote_call API
-		logger.Debug("Triggering doorbell ring for", matchedDoor.Name)
+		logger.Debug("Triggering doorbell ring", "door", matchedDoor.Name)
 		if err := p.controller.TriggerDoorbellRing(matchedDoor); err != nil {
-			logger.Error("Failed to trigger doorbell ring", matchedDoor.Name, err)
+			logger.Error("Failed to trigger doorbell ring", "door", matchedDoor.Name, "err", err)
 		}
 	default:
-		logger.Warn("Unknown action:", cmd.Action)
+		logger.Warn("Unknown action", "action", cmd.Action)
 	}
 }
 
@@ -175,6 +174,6 @@ func (p *Publisher) getDoorTopic(door *unifi.Door) string {
 }
 
 // publish publishes a message to MQTT
-func (p *Publisher) publish(topic string, payload interface{}) {
+func (p *Publisher) publish(topic string, payload any) {
 	mqtt.PublishJSON(topic, payload)
 }

@@ -13,6 +13,7 @@ import (
 )
 
 func main() {
+	logger.Init("debug", logger.Logger())
 	if len(os.Args) < 2 {
 		logger.Error("Usage: unifi-access-mqtt <config-file>")
 		os.Exit(1)
@@ -23,7 +24,7 @@ func main() {
 	// Load configuration
 	cfg, err := config.LoadConfig(configFile)
 	if err != nil {
-		logger.Error("Failed to load config:", err)
+		logger.Error("Failed to load config", "err", err)
 		os.Exit(1)
 	}
 
@@ -31,7 +32,7 @@ func main() {
 	logger.SetLevel(cfg.LogLevel)
 
 	logger.Info("UniFi Access MQTT Gateway starting...")
-	logger.Info("Connecting to UniFi Access at", cfg.UniFi.Host)
+	logger.Info("Connecting to UniFi Access", "host", cfg.UniFi.Host)
 
 	// Create UniFi Access controller
 	controller := unifi.NewController(
@@ -48,7 +49,7 @@ func main() {
 
 	// Connect to UniFi Access
 	if err := controller.Connect(); err != nil {
-		logger.Error("Failed to connect to UniFi Access:", err)
+		logger.Error("Failed to connect to UniFi Access", "err", err)
 		os.Exit(1)
 	}
 	defer controller.Disconnect()
@@ -66,16 +67,21 @@ func main() {
 
 	controller.OnDoorbellRing = func(door *unifi.Door) {
 		publisher.PublishDoorbellState(door)
-		logger.Info("Doorbell ringing:", door.Name)
+		logger.Info("Doorbell ringing", "door", door.Name)
 	}
 
 	controller.OnDoorbellCancel = func(door *unifi.Door) {
 		publisher.PublishDoorbellState(door)
-		logger.Info("Doorbell call ended:", door.Name)
+		logger.Info("Doorbell call ended", "door", door.Name)
 	}
 
 	// Subscribe to MQTT commands
 	publisher.SubscribeToCommands()
+
+	// Subscribe to external door-contact topics that should dismiss active calls
+	if cfg.UniFi.Doorbell != nil && len(cfg.UniFi.Doorbell.DismissOnContact) > 0 {
+		mqttpub.NewContactListener(controller, cfg.UniFi.Doorbell.DismissOnContact).Start()
+	}
 
 	// Publish initial state for all doors
 	publisher.PublishAllDoors()

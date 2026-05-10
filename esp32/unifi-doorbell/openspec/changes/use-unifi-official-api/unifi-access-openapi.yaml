@@ -1,0 +1,278 @@
+openapi: 3.0.3
+info:
+  title: UniFi Access Developer API
+  description: |
+    Subset of the official UniFi Access REST API (developer endpoints) used by
+    this project to trigger and discover doorbells on UniFi Access Intercom
+    and Reader Pro devices.
+
+    Source: UniFi Access API Reference (UniFi Access >= 4.0.10 for the doorbell
+    trigger endpoint).
+
+    **Scope**: This document covers only the *official, documented* endpoints
+    the firmware uses. The firmware also calls one **undocumented internal**
+    endpoint that has no official equivalent:
+
+      - `POST /proxy/access/api/v2/device/{id}/reply_remote` (port 443)
+
+    used to *purely cancel* an in-flight ring without re-triggering it. It
+    requires the legacy username/password login + CSRF + session cookie auth
+    and is intentionally NOT modelled here because Ubiquiti has not published
+    a contract for it. See the change's `design.md` for the rationale.
+
+    Authentication for the endpoints below uses a Bearer API token created via
+    the UniFi Console at Access > Settings > General > Advanced > API Token.
+    The API server runs on the UniFi Console host on port 12445 over HTTPS
+    with a self-signed certificate.
+  version: "4.0.10"
+servers:
+  - url: https://{host}:12445
+    description: UniFi Access API server (self-signed TLS)
+    variables:
+      host:
+        default: 192.168.1.1
+        description: Hostname or IP address of the UniFi Console.
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/developer/devices:
+    get:
+      summary: Fetch devices
+      description: |
+        Returns the full list of devices known to UniFi Access. Used by this
+        project to discover doorbell-capable readers and to obtain their
+        `device_id` for the doorbell trigger endpoint.
+      operationId: fetchDevices
+      tags: [Device]
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: |
+            If "true", forces a real-time refresh of the device cache. Slower
+            but returns up-to-date device information.
+      responses:
+        '200':
+          description: Devices retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicesResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/developer/devices/{device_id}/doorbell:
+    post:
+      summary: Trigger doorbell
+      description: |
+        Triggers the doorbell on an Intercom or Reader Pro device. This is the
+        official replacement for the legacy unofficial `remote_call` endpoint.
+
+        Requires UniFi Access version 4.0.10 or later. Permission key:
+        `edit:device`.
+      operationId: triggerDoorbell
+      tags: [Device]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerDoorbellRequest'
+            examples:
+              ringWithCancel:
+                summary: Ring and cancel a previous ring
+                value:
+                  room_name: "Front Door"
+                  cancel: true
+              ringMinimal:
+                summary: Minimal trigger (no body)
+                value: {}
+      responses:
+        '200':
+          description: Doorbell triggered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessStringResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/RequestFailed' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Token
+      description: |
+        API token created in the UniFi Portal. Sent as
+        `Authorization: Bearer <token>`.
+
+  parameters:
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |
+        Unique device ID of an Intercom or Reader Pro. Obtain via
+        `GET /api/v1/developer/devices`.
+
+  schemas:
+    Device:
+      type: object
+      description: |
+        Documented fields are `id`, `name`, `type`, `alias`. The controller
+        also returns several **undocumented** fields that this project
+        relies on: `capabilities`, `is_online`, `is_connected`, `is_managed`,
+        `is_adopted`, `connected_uah_id`, `location_id`. They are listed
+        below for clarity but are not guaranteed by the official spec.
+      required: [id, name, type, alias]
+      properties:
+        id:
+          type: string
+          description: |
+            Identity ID of the device. Used verbatim as `{device_id}` in
+            other developer-API calls. Do NOT normalize / strip / re-case.
+          example: "84784806928f"
+        name:
+          type: string
+          example: "UA G3 Pro 928f"
+        type:
+          type: string
+          description: |
+            Device model. NOT a reliable doorbell-capability indicator —
+            use the `capabilities` array instead.
+          example: "UA-G3-Pro"
+        alias:
+          type: string
+          description: User-assigned display name shown in the UniFi Access UI.
+          example: "Fam. Arndt"
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: |
+            Capability strings reported by the device. Doorbell-capable
+            readers include `"remote_call"`. This is the authoritative
+            marker for "this device can be told to ring."
+          example:
+            - "remote_call"
+            - "remote_view"
+            - "support_webrtc"
+            - "doorbell_timeout"
+        is_online:
+          type: boolean
+          description: Whether the device is currently online.
+          example: true
+        is_connected:
+          type: boolean
+        is_managed:
+          type: boolean
+        is_adopted:
+          type: boolean
+        connected_uah_id:
+          type: string
+          description: ID of the UA Hub the device is connected to.
+        location_id:
+          type: string
+          format: uuid
+
+    DevicesResponse:
+      type: object
+      required: [code, msg, data]
+      properties:
+        code:
+          type: string
+          example: SUCCESS
+        msg:
+          type: string
+          example: success
+        data:
+          type: array
+          description: |
+            Array of device groups, each group itself an array of devices.
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/Device'
+
+    TriggerDoorbellRequest:
+      type: object
+      properties:
+        room_name:
+          type: string
+          description: |
+            Optional. The Intercom directory name to ring. Targets a specific
+            room/viewer when the device is part of an intercom directory.
+          example: "Front Door"
+        cancel:
+          type: boolean
+          description: |
+            Optional. If true, cancels the previous doorbell call if it is
+            still ringing before triggering a new one.
+          default: false
+
+    SuccessStringResponse:
+      type: object
+      required: [code, msg, data]
+      properties:
+        code:
+          type: string
+          example: SUCCESS
+        msg:
+          type: string
+          example: success
+        data:
+          type: string
+          example: success
+
+    ErrorResponse:
+      type: object
+      required: [code, msg]
+      properties:
+        code:
+          type: string
+          description: |
+            Error code. Common values include `CODE_PARAMS_INVALID`,
+            `CODE_AUTH_FAILED`, `CODE_ACCESS_TOKEN_INVALID`,
+            `CODE_UNAUTHORIZED`, `CODE_DEVICE_DEVICE_NOT_FOUND`,
+            `CODE_DEVICE_DEVICE_OFFLINE`, `CODE_DEVICE_API_NOT_SUPPORTED`,
+            `CODE_SYSTEM_ERROR`.
+          example: CODE_PARAMS_INVALID
+        msg:
+          type: string
+          example: Invalid parameters.
+        data:
+          nullable: true
+
+  responses:
+    BadRequest:
+      description: Request was unacceptable, often due to missing or invalid parameters.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: The request lacks a valid API token for authentication.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RequestFailed:
+      description: Request contained valid parameters but failed (e.g. device offline).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: The API token does not have the required permission scope.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }

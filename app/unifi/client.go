@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -60,7 +59,7 @@ func (c *Client) Login() error {
 
 	// Step 1: Get initial CSRF token by making a request to the base URL
 	if err := c.acquireCSRFToken(); err != nil {
-		logger.Warn("Failed to acquire initial CSRF token:", err)
+		logger.Warn("Failed to acquire initial CSRF token", "err", err)
 		// Continue anyway, some controllers might not require this
 	}
 
@@ -89,7 +88,7 @@ func (c *Client) Login() error {
 		req.Header.Set("X-Csrf-Token", c.csrfToken)
 	}
 
-	logger.Debug("Attempting login to", url)
+	logger.Debug("Attempting login", "url", url)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -98,10 +97,10 @@ func (c *Client) Login() error {
 	defer resp.Body.Close()
 
 	// Log response headers for debugging
-	logger.Debug("Login response status:", resp.StatusCode)
+	logger.Debug("Login response", "status", resp.StatusCode)
 	for name, values := range resp.Header {
 		for _, value := range values {
-			logger.Debug("  Response header:", name, "=", value)
+			logger.Trace("Login response header", "name", name, "value", value)
 		}
 	}
 
@@ -121,9 +120,9 @@ func (c *Client) Login() error {
 
 	// Log cookies after login and extract user info from JWT
 	cookies := c.httpClient.Jar.Cookies(req.URL)
-	logger.Debug("Cookies after login:", strconv.Itoa(len(cookies)))
+	logger.Debug("Cookies after login", "count", len(cookies))
 	for _, cookie := range cookies {
-		logger.Debug("  Cookie:", cookie.Name)
+		logger.Trace("Cookie", "name", cookie.Name)
 		if cookie.Name == "TOKEN" {
 			c.extractUserFromJWT(cookie.Value)
 		}
@@ -152,10 +151,10 @@ func (c *Client) acquireCSRFToken() error {
 	defer resp.Body.Close()
 
 	// Log all headers for debugging
-	logger.Debug("Response headers from", c.host)
+	logger.Trace("Response headers", "host", c.host)
 	for name, values := range resp.Header {
 		for _, value := range values {
-			logger.Debug("  Header:", name, "=", value)
+			logger.Trace("Header", "name", name, "value", value)
 		}
 	}
 
@@ -193,7 +192,7 @@ func (c *Client) extractUserFromJWT(token string) {
 		// Try standard encoding with padding
 		payload, err = base64.StdEncoding.DecodeString(parts[1])
 		if err != nil {
-			logger.Debug("Failed to decode JWT payload:", err)
+			logger.Debug("Failed to decode JWT payload", "err", err)
 			return
 		}
 	}
@@ -201,14 +200,14 @@ func (c *Client) extractUserFromJWT(token string) {
 	// Parse JSON payload
 	var claims map[string]interface{}
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		logger.Debug("Failed to parse JWT payload:", err)
+		logger.Debug("Failed to parse JWT payload", "err", err)
 		return
 	}
 
 	// Extract userId
 	if userID, ok := claims["userId"].(string); ok {
 		c.userID = userID
-		logger.Debug("Extracted user ID from JWT:", userID)
+		logger.Debug("Extracted user ID from JWT", "user_id", userID)
 	}
 }
 
@@ -229,7 +228,7 @@ func (c *Client) GetUserName() string {
 // Bootstrap retrieves the initial configuration from the controller
 func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 	url := c.getAccessAPIURL("/devices/topology4")
-	logger.Debug("Bootstrap URL:", url)
+	logger.Debug("Bootstrap URL", "url", url)
 
 	data, err := c.get(url)
 	if err != nil {
@@ -237,9 +236,11 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 	}
 
 	// Log more of the response for debugging
-	logger.Debug("Full topology response length:", strconv.Itoa(len(data)))
+	logger.Debug("Topology response received", "bytes", len(data))
 	if len(data) > 2000 {
-		logger.Debug("Response excerpt:", string(data[:2000]))
+		logger.Trace("Topology response excerpt", "data", string(data[:2000]))
+	} else {
+		logger.Trace("Topology response", "data", string(data))
 	}
 
 	// Parse topology response
@@ -248,7 +249,7 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 		return nil, fmt.Errorf("failed to parse topology response: %w", err)
 	}
 
-	logger.Debug("Topology: parsed", strconv.Itoa(len(topology.Data)), "buildings")
+	logger.Debug("Topology parsed", "buildings", len(topology.Data))
 
 	// Extract devices and doors from the hierarchical topology
 	response := &BootstrapResponse{
@@ -271,7 +272,7 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 				device := group[i]
 				if device.IsViewer() {
 					response.Viewers = append(response.Viewers, device)
-					logger.Debug("Found Viewer at building level:", device.GetID(), device.Name)
+					logger.Debug("Found Viewer at building level", "id", device.GetID(), "name", device.Name)
 				}
 			}
 		}
@@ -308,7 +309,7 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 		}
 	}
 
-	logger.Debug("Bootstrap: extracted", strconv.Itoa(len(response.Devices)), "devices,", strconv.Itoa(len(response.Doors)), "doors,", strconv.Itoa(len(response.Viewers)), "viewers")
+	logger.Debug("Bootstrap extracted", "devices", len(response.Devices), "doors", len(response.Doors), "viewers", len(response.Viewers))
 	return response, nil
 }
 
@@ -321,7 +322,7 @@ func (c *Client) Unlock(deviceID string) error {
 		return fmt.Errorf("unlock request failed: %w", err)
 	}
 
-	logger.Info("Successfully unlocked device:", deviceID)
+	logger.Info("Successfully unlocked device", "device", deviceID)
 	return nil
 }
 
@@ -334,14 +335,14 @@ func (c *Client) UnlockLocation(locationID string) error {
 		return fmt.Errorf("unlock location request failed: %w", err)
 	}
 
-	logger.Info("Successfully unlocked location:", locationID)
+	logger.Info("Successfully unlocked location", "location", locationID)
 	return nil
 }
 
 // DismissDoorbellCall dismisses/declines an active doorbell call
 func (c *Client) DismissDoorbellCall(deviceID, requestID, userID, userName string) error {
 	url := c.getAccessAPIURL(fmt.Sprintf("/device/%s/reply_remote", deviceID))
-	logger.Debug("Dismissing doorbell call:", url)
+	logger.Debug("Dismissing doorbell call", "url", url)
 
 	payload := map[string]interface{}{
 		"device_id":  deviceID,
@@ -356,7 +357,7 @@ func (c *Client) DismissDoorbellCall(deviceID, requestID, userID, userName strin
 		return fmt.Errorf("dismiss doorbell call failed: %w", err)
 	}
 
-	logger.Info("Successfully dismissed doorbell call:", requestID)
+	logger.Info("Successfully dismissed doorbell call", "request_id", requestID)
 	return nil
 }
 
@@ -382,7 +383,7 @@ type DoorbellRingRequest struct {
 // This uses the DoorbellRequestBody format that the reader uses when someone presses the button
 func (c *Client) TriggerDoorbellRing(req DoorbellRingRequest) error {
 	url := c.getAccessAPIURL(fmt.Sprintf("/device/%s/remote_call", req.DeviceID))
-	logger.Debug("Triggering doorbell ring:", url)
+	logger.Debug("Triggering doorbell ring", "url", url)
 
 	// Generate unique IDs similar to what the reader does
 	roomID := fmt.Sprintf("PR-%s", generateUUID())
@@ -424,14 +425,14 @@ func (c *Client) TriggerDoorbellRing(req DoorbellRingRequest) error {
 		"notify_door_guards": viewerIDs,
 	}
 
-	logger.Debug("DoorbellRequestBody payload:", payload)
+	logger.Trace("DoorbellRequestBody payload", "payload", payload)
 
 	respBody, err := c.post(url, payload)
 	if err != nil {
 		return fmt.Errorf("remote_call request failed: %w", err)
 	}
 
-	logger.Debug("Remote call response:", string(respBody))
+	logger.Trace("Remote call response", "body", string(respBody))
 	return nil
 }
 

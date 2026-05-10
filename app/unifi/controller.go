@@ -2,7 +2,6 @@ package unifi
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -67,7 +66,7 @@ func (c *Controller) Connect() error {
 
 	// Start event listener
 	if err := c.eventListener.Start(); err != nil {
-		logger.Warn("Failed to start event listener:", err)
+		logger.Warn("Failed to start event listener", "err", err)
 		// Don't fail completely, just warn
 	}
 
@@ -107,7 +106,7 @@ func (c *Controller) GetDoorByName(name string) *Door {
 
 // UnlockDoor unlocks a door
 func (c *Controller) UnlockDoor(door *Door) error {
-	logger.Info("Unlocking door:", door.Name)
+	logger.Info("Unlocking door", "door", door.Name)
 	return c.client.Unlock(door.ID)
 }
 
@@ -127,13 +126,13 @@ func (c *Controller) TriggerDoorbellRing(door *Door) error {
 		deviceID = door.ReaderDeviceID
 		if deviceID == "" {
 			deviceID = door.ID
-			logger.Warn("No reader device configured for door", door.Name, "- using hub ID:", deviceID)
+			logger.Warn("No reader device configured for door, using hub ID", "door", door.Name, "device", deviceID)
 		}
 		viewerIDs = door.ViewerIDs
 	}
 	c.mu.RUnlock()
 
-	logger.Debug("Triggering doorbell ring for door:", door.Name, "device:", deviceID, "viewers:", viewerIDs)
+	logger.Debug("Triggering doorbell ring", "door", door.Name, "device", deviceID, "viewers", viewerIDs)
 
 	req := DoorbellRingRequest{
 		DeviceID:   deviceID,
@@ -159,7 +158,7 @@ func (c *Controller) DismissDoorbellCall(door *Door) error {
 		deviceID = door.ID
 	}
 
-	logger.Info("Dismissing doorbell call for door:", door.Name, "request:", door.DoorbellRequestID, "device:", deviceID)
+	logger.Info("Dismissing doorbell call", "door", door.Name, "request", door.DoorbellRequestID, "device", deviceID)
 	err := c.client.DismissDoorbellCall(deviceID, door.DoorbellRequestID, c.client.GetUserID(), c.client.GetUserName())
 	if err != nil {
 		return err
@@ -189,12 +188,12 @@ func (c *Controller) bootstrap() error {
 		return err
 	}
 
-	logger.Info("UniFi Access Controller:", bootstrap.Host.Name, "(Version:", bootstrap.Version+")")
-	logger.Info("Bootstrap: Found", strconv.Itoa(len(bootstrap.Devices)), "devices,", strconv.Itoa(len(bootstrap.Doors)), "doors,", strconv.Itoa(len(bootstrap.Viewers)), "viewers")
+	logger.Info("UniFi Access Controller", "name", bootstrap.Host.Name, "version", bootstrap.Version)
+	logger.Info("Bootstrap found", "devices", len(bootstrap.Devices), "doors", len(bootstrap.Doors), "viewers", len(bootstrap.Viewers))
 
 	// Debug: log all devices
 	for i, device := range bootstrap.Devices {
-		logger.Debug("Device", i, ":", device.Name, "type=", device.DeviceType, "id=", device.UniqueID)
+		logger.Debug("Device", "index", i, "name", device.Name, "type", device.DeviceType, "id", device.UniqueID)
 	}
 
 	c.mu.Lock()
@@ -228,11 +227,11 @@ func (c *Controller) bootstrap() error {
 		if viewer.Door != nil {
 			// Door-specific viewer
 			doorViewers[viewer.Door.UniqueID] = append(doorViewers[viewer.Door.UniqueID], viewerID)
-			logger.Debug("Viewer", viewerID, "associated with door", viewer.Door.Name)
+			logger.Debug("Viewer associated with door", "viewer", viewerID, "door", viewer.Door.Name)
 		} else {
 			// Building-level viewer - available to all doors
 			allViewerIDs = append(allViewerIDs, viewerID)
-			logger.Debug("Viewer", viewerID, "(", viewer.Name, ") available to all doors (building-level)")
+			logger.Debug("Viewer available to all doors (building-level)", "viewer", viewerID, "name", viewer.Name)
 		}
 	}
 
@@ -242,7 +241,7 @@ func (c *Controller) bootstrap() error {
 	for _, device := range bootstrap.Devices {
 		if device.IsReader() && device.Door != nil {
 			doorReaders[device.Door.UniqueID] = device.GetID()
-			logger.Debug("Reader", device.GetID(), "(", device.Name, ") associated with door", device.Door.Name)
+			logger.Debug("Reader associated with door", "reader", device.GetID(), "name", device.Name, "door", device.Door.Name)
 		}
 	}
 
@@ -290,12 +289,13 @@ func (c *Controller) bootstrap() error {
 		c.doors[door.ID] = door
 		c.doorsByName[NormalizeDoorName(door.Name)] = door
 
-		logger.Info("Door:", door.Name,
-			"(Type:", device.DeviceType+",",
-			"Online:", strconv.FormatBool(device.IsOnline)+",",
-			"Lock:", door.LockStatus+",",
-			"Doorbell:", strconv.FormatBool(device.HasCapability(CapabilityDoorbell))+",",
-			"Viewers:", strconv.Itoa(len(door.ViewerIDs))+")")
+		logger.Info("Door",
+			"name", door.Name,
+			"type", device.DeviceType,
+			"online", device.IsOnline,
+			"lock", door.LockStatus,
+			"doorbell", device.HasCapability(CapabilityDoorbell),
+			"viewers", len(door.ViewerIDs))
 	}
 
 	// Resolve doorbell config if set
@@ -334,12 +334,12 @@ func (c *Controller) resolveDoorbellConfig(bootstrap *BootstrapResponse) {
 		normalized := NormalizeMAC(c.doorbellConfig.SourceReader)
 		if resolved, ok := deviceMap[normalized]; ok {
 			c.doorbellConfig.resolvedReader = resolved
-			logger.Info("Resolved doorbell sourceReader:", c.doorbellConfig.SourceReader, "->", resolved)
+			logger.Info("Resolved doorbell sourceReader", "input", c.doorbellConfig.SourceReader, "resolved", resolved)
 		} else if resolved, ok := deviceMap[c.doorbellConfig.SourceReader]; ok {
 			c.doorbellConfig.resolvedReader = resolved
-			logger.Info("Resolved doorbell sourceReader:", c.doorbellConfig.SourceReader, "->", resolved)
+			logger.Info("Resolved doorbell sourceReader", "input", c.doorbellConfig.SourceReader, "resolved", resolved)
 		} else {
-			logger.Warn("Could not resolve doorbell sourceReader:", c.doorbellConfig.SourceReader)
+			logger.Warn("Could not resolve doorbell sourceReader", "input", c.doorbellConfig.SourceReader)
 		}
 	}
 
@@ -349,12 +349,12 @@ func (c *Controller) resolveDoorbellConfig(bootstrap *BootstrapResponse) {
 		normalized := NormalizeMAC(viewer)
 		if resolved, ok := deviceMap[normalized]; ok {
 			c.doorbellConfig.resolvedViewers = append(c.doorbellConfig.resolvedViewers, resolved)
-			logger.Info("Resolved doorbell targetViewer:", viewer, "->", resolved)
+			logger.Info("Resolved doorbell targetViewer", "input", viewer, "resolved", resolved)
 		} else if resolved, ok := deviceMap[viewer]; ok {
 			c.doorbellConfig.resolvedViewers = append(c.doorbellConfig.resolvedViewers, resolved)
-			logger.Info("Resolved doorbell targetViewer:", viewer, "->", resolved)
+			logger.Info("Resolved doorbell targetViewer", "input", viewer, "resolved", resolved)
 		} else {
-			logger.Warn("Could not resolve doorbell targetViewer:", viewer)
+			logger.Warn("Could not resolve doorbell targetViewer", "input", viewer)
 		}
 	}
 }
@@ -422,13 +422,13 @@ func (c *Controller) setupEventHandlers() {
 	c.eventListener.On(EventBootstrap, func(event EventPacket) {
 		logger.Info("Received bootstrap event, refreshing device state")
 		if err := c.bootstrap(); err != nil {
-			logger.Error("Failed to refresh bootstrap:", err)
+			logger.Error("Failed to refresh bootstrap", "err", err)
 		}
 	})
 
 	// Log all events in trace mode
 	c.eventListener.On("*", func(event EventPacket) {
-		logger.Trace("Event:", event.Event, "(Object:", event.EventObjectID+")")
+		logger.Trace("Event", "event", event.Event, "object", event.EventObjectID)
 	})
 }
 
@@ -451,7 +451,7 @@ func (c *Controller) handleDoorbellRing(event EventPacket) {
 	c.mu.Unlock()
 
 	if door != nil {
-		logger.Info("Doorbell ring on", door.Name, "(Request ID:", data.RequestID, "Device:", data.DeviceID+")")
+		logger.Info("Doorbell ring", "door", door.Name, "request_id", data.RequestID, "device", data.DeviceID)
 		if c.OnDoorbellRing != nil {
 			c.OnDoorbellRing(door)
 		}
@@ -481,7 +481,7 @@ func (c *Controller) handleDoorbellCancel(event EventPacket) {
 	c.mu.Unlock()
 
 	if matchedDoor != nil {
-		logger.Info("Doorbell call ended on", matchedDoor.Name)
+		logger.Info("Doorbell call ended", "door", matchedDoor.Name)
 		if c.OnDoorbellCancel != nil {
 			c.OnDoorbellCancel(matchedDoor)
 		}
@@ -530,7 +530,7 @@ func (c *Controller) handleDeviceUpdate(event EventPacket) {
 		newLockStatus := c.getLockStatusFromDevice(door.Device)
 		if newLockStatus != door.LockStatus {
 			door.LockStatus = newLockStatus
-			logger.Info("Door", door.Name, "lock status changed to", door.LockStatus)
+			logger.Info("Door lock status changed", "door", door.Name, "status", door.LockStatus)
 		}
 
 		// Update online status
@@ -558,11 +558,11 @@ func (c *Controller) handleDeviceUpdateV2(event EventPacket) {
 		return
 	}
 
-	logger.Debug("handleDeviceUpdateV2: device ID =", deviceID)
+	logger.Debug("handleDeviceUpdateV2: device ID", "device_id", deviceID)
 
 	// Check for location_states in the event (for UGT devices)
 	states := ParseLocationStates(event)
-	logger.Debug("handleDeviceUpdateV2: location_states count =", strconv.Itoa(len(states)))
+	logger.Debug("handleDeviceUpdateV2: location_states count", "count", len(states))
 
 	c.mu.Lock()
 	door := c.doors[deviceID]
@@ -578,18 +578,18 @@ func (c *Controller) handleDeviceUpdateV2(event EventPacket) {
 			return
 		}
 
-		logger.Debug("handleDeviceUpdateV2: door not found for ID", deviceID, "- known doors:", strconv.Itoa(len(c.doors)))
+		logger.Debug("handleDeviceUpdateV2: door not found", "device_id", deviceID, "known_doors", len(c.doors))
 		// Fall back to regular device update handling
 		c.handleDeviceUpdate(event)
 		return
 	}
 
-	logger.Debug("handleDeviceUpdateV2: found door", door.Name)
+	logger.Debug("handleDeviceUpdateV2: found door", "door", door.Name)
 
 	if len(states) > 0 {
 		c.mu.Lock()
 		for _, state := range states {
-			logger.Debug("handleDeviceUpdateV2: state lock=", state.Lock, "dps=", state.DPS)
+			logger.Debug("handleDeviceUpdateV2: state", "lock", state.Lock, "dps", state.DPS)
 			if state.Lock == "unlocked" {
 				door.LockStatus = "unlocked"
 			} else if state.Lock == "locked" {
@@ -628,7 +628,7 @@ func (c *Controller) handleRemoteUnlock(event EventPacket) {
 	c.mu.Unlock()
 
 	if door != nil {
-		logger.Info("Door", door.Name, "unlocked remotely")
+		logger.Info("Door unlocked remotely", "door", door.Name)
 		if c.OnDoorUpdate != nil {
 			c.OnDoorUpdate(door)
 		}
@@ -688,7 +688,7 @@ func (c *Controller) SetDoorbellConfig(sourceReader string, targetViewers []stri
 		SourceReader:  sourceReader,
 		TargetViewers: targetViewers,
 	}
-	logger.Info("Doorbell config set: sourceReader=", sourceReader, "targetViewers=", targetViewers)
+	logger.Info("Doorbell config set", "sourceReader", sourceReader, "targetViewers", targetViewers)
 }
 
 // SanitizeName sanitizes a door name for use in MQTT topics
