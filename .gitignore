@@ -14,3 +14,4 @@ dist/
 build/
 *.trace
 node_modules/
+access-mqtt-trace/mqtt-trace

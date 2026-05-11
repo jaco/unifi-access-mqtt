@@ -1,6 +1,7 @@
 package unifi
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -108,9 +109,40 @@ type DoorLocationConfig struct {
 type EventPacket struct {
 	Event         string                 `json:"event"`
 	EventObjectID string                 `json:"event_object_id,omitempty"`
-	Data          map[string]interface{} `json:"data,omitempty"`
+	Data          map[string]interface{} `json:"-"`
+	DataString    string                 `json:"-"`
 	Meta          *EventMeta             `json:"meta,omitempty"`
 	Timestamp     time.Time              `json:"timestamp,omitempty"`
+}
+
+// UnmarshalJSON accepts `data` as either a JSON object or a string.
+// Some periodic WebSocket messages encode `data` as a plain string;
+// those would otherwise fail strict map decoding and drop the whole event.
+func (e *EventPacket) UnmarshalJSON(b []byte) error {
+	aux := struct {
+		Event         string          `json:"event"`
+		EventObjectID string          `json:"event_object_id,omitempty"`
+		Data          json.RawMessage `json:"data,omitempty"`
+		Meta          *EventMeta      `json:"meta,omitempty"`
+		Timestamp     time.Time       `json:"timestamp,omitempty"`
+	}{}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	e.Event = aux.Event
+	e.EventObjectID = aux.EventObjectID
+	e.Meta = aux.Meta
+	e.Timestamp = aux.Timestamp
+
+	if len(aux.Data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(aux.Data, &e.Data); err == nil {
+		return nil
+	}
+	// Fall back to string form; ignore other shapes silently.
+	_ = json.Unmarshal(aux.Data, &e.DataString)
+	return nil
 }
 
 // EventMeta represents event metadata
