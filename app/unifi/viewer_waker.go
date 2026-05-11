@@ -30,6 +30,9 @@ type ViewerWaker struct {
 	keyFile      string
 	clientID     string
 	client       paho.Client
+
+	// OnWake fires once per viewer after a successful publish.
+	OnWake func(viewerID string)
 }
 
 // NewViewerWaker constructs a waker. Connect must be called before Wake.
@@ -110,6 +113,9 @@ func (w *ViewerWaker) Wake(viewerIDs []string, sourceReader string) error {
 		}
 		logger.Info("viewer-waker: wake sent",
 			"viewer", viewerID, "request_id", requestID)
+		if w.OnWake != nil {
+			w.OnWake(viewerID)
+		}
 	}
 	return nil
 }

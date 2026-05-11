@@ -4,8 +4,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/mqtt-home/unifi-access-mqtt/config"
+	"github.com/mqtt-home/unifi-access-mqtt/metrics"
 	mqttpub "github.com/mqtt-home/unifi-access-mqtt/mqtt"
 	"github.com/mqtt-home/unifi-access-mqtt/unifi"
 	"github.com/philipparndt/go-logger"
@@ -60,19 +62,32 @@ func main() {
 	// Create MQTT publisher
 	publisher := mqttpub.NewPublisher(controller)
 
+	// Metrics store: viewer wakes + doorbell ring/miss counters
+	metricsStore := metrics.New()
+
 	// Set up event callbacks
 	controller.OnDoorUpdate = func(door *unifi.Door) {
 		publisher.PublishDoorState(door)
+		if door.LockStatus == "unlocked" {
+			metricsStore.MarkDoorbellHandled(door.ID)
+		}
 	}
 
 	controller.OnDoorbellRing = func(door *unifi.Door) {
 		publisher.PublishDoorbellState(door)
+		metricsStore.RecordDoorbellRing(door.ID, door.Name)
 		logger.Info("Doorbell ringing", "door", door.Name)
 	}
 
 	controller.OnDoorbellCancel = func(door *unifi.Door) {
 		publisher.PublishDoorbellState(door)
+		metricsStore.RecordDoorbellCancel(door.ID)
+		publisher.PublishMetrics(metricsStore.Snapshot())
 		logger.Info("Doorbell call ended", "door", door.Name)
+	}
+
+	controller.OnDoorbellDismiss = func(door *unifi.Door) {
+		metricsStore.MarkDoorbellHandled(door.ID)
 	}
 
 	// Subscribe to MQTT commands
@@ -92,6 +107,9 @@ func main() {
 			cfg.UniFi.Viewer.Cert,
 			cfg.UniFi.Viewer.Key,
 		)
+		waker.OnWake = func(viewerID string) {
+			metricsStore.RecordViewerWake(viewerID)
+		}
 		if err := waker.Connect(); err != nil {
 			logger.Error("Failed to connect viewer waker", "err", err)
 		} else {
@@ -102,6 +120,16 @@ func main() {
 
 	// Publish initial state for all doors
 	publisher.PublishAllDoors()
+	publisher.PublishMetrics(metricsStore.Snapshot())
+
+	// Periodically refresh metrics so rolling windows decay in the broker.
+	metricsTicker := time.NewTicker(time.Minute)
+	defer metricsTicker.Stop()
+	go func() {
+		for range metricsTicker.C {
+			publisher.PublishMetrics(metricsStore.Snapshot())
+		}
+	}()
 
 	logger.Info("UniFi Access MQTT Gateway is running")
 

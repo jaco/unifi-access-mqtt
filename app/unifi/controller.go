@@ -29,9 +29,10 @@ type Controller struct {
 	mu             sync.RWMutex
 
 	// Event callbacks
-	OnDoorUpdate     func(door *Door)
-	OnDoorbellRing   func(door *Door)
-	OnDoorbellCancel func(door *Door)
+	OnDoorUpdate      func(door *Door)
+	OnDoorbellRing    func(door *Door)
+	OnDoorbellCancel  func(door *Door)
+	OnDoorbellDismiss func(door *Door) // fires when DismissDoorbellCall is invoked
 }
 
 // NewController creates a new UniFi Access controller
@@ -186,6 +187,9 @@ func (c *Controller) DismissDoorbellCall(door *Door) error {
 	}
 
 	logger.Info("Dismissing doorbell call", "door", door.Name, "request", door.DoorbellRequestID, "device", deviceID)
+	if c.OnDoorbellDismiss != nil {
+		c.OnDoorbellDismiss(door)
+	}
 	err := c.client.DismissDoorbellCall(deviceID, door.DoorbellRequestID, c.client.GetUserID(), c.client.GetUserName())
 	if err != nil {
 		return err

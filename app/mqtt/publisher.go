@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mqtt-home/unifi-access-mqtt/metrics"
 	"github.com/mqtt-home/unifi-access-mqtt/unifi"
 	"github.com/philipparndt/go-logger"
 	"github.com/philipparndt/mqtt-gateway/mqtt"
@@ -84,6 +85,11 @@ func (p *Publisher) PublishDoorbellState(door *unifi.Door) {
 
 	p.publish(topic, state)
 	logger.Debug("Published doorbell state", "door", door.Name, "status", status)
+}
+
+// PublishMetrics publishes the current metrics snapshot.
+func (p *Publisher) PublishMetrics(snap metrics.Snapshot) {
+	p.publish("metrics", snap)
 }
 
 // PublishAllDoors publishes state for all doors
