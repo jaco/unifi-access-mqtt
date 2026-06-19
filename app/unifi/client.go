@@ -530,8 +530,60 @@ func (c *Client) post(url string, payload interface{}) ([]byte, error) {
 	return c.doRequest(req)
 }
 
-// doRequest performs an HTTP request with proper headers
+// doRequest performs an HTTP request with proper headers. If the request fails
+// with 401 Unauthorized (e.g. the session token expired while the event
+// WebSocket stayed connected, so no reconnect-triggered re-login occurred), it
+// re-authenticates once and retries the request.
 func (c *Client) doRequest(req *http.Request) ([]byte, error) {
+	// Clone before sending so the body can be replayed on retry.
+	retryReq, cloneErr := cloneRequest(req)
+
+	body, status, err := c.sendRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if status == http.StatusUnauthorized {
+		if cloneErr != nil {
+			// Can't replay the body, so surface the original 401.
+			return nil, fmt.Errorf("request failed with status %d: %s", status, string(body))
+		}
+
+		logger.Warn("Request unauthorized (401), re-authenticating and retrying", "url", req.URL.String())
+		if loginErr := c.Login(); loginErr != nil {
+			return nil, fmt.Errorf("re-login after 401 failed: %w", loginErr)
+		}
+
+		body, status, err = c.sendRequest(retryReq)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("request failed with status %d: %s", status, string(body))
+	}
+
+	return body, nil
+}
+
+// cloneRequest creates a copy of req with a fresh, replayable body.
+func cloneRequest(req *http.Request) (*http.Request, error) {
+	clone := req.Clone(req.Context())
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		clone.Body = body
+	}
+	return clone, nil
+}
+
+// sendRequest performs a single HTTP request, attaching the current CSRF token
+// and updating it from the response. It returns the body and status code
+// without treating non-2xx as an error, so callers can react to the status.
+func (c *Client) sendRequest(req *http.Request) ([]byte, int, error) {
 	c.mu.RLock()
 	csrfToken := c.csrfToken
 	c.mu.RUnlock()
@@ -542,7 +594,7 @@ func (c *Client) doRequest(req *http.Request) ([]byte, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
@@ -559,12 +611,8 @@ func (c *Client) doRequest(req *http.Request) ([]byte, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, resp.StatusCode, err
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return body, nil
+	return body, resp.StatusCode, nil
 }
