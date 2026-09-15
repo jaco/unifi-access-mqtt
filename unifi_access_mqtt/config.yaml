@@ -1,0 +1,57 @@
+name: "UniFi Access MQTT"
+version: "0.1.0"
+slug: "unifi_access_mqtt"
+description: "Bridge UniFi Access to Home Assistant MQTT and wake Intercom Viewers"
+url: "https://github.com/jaco/unifi-access-mqtt"
+arch:
+  - amd64
+  - aarch64
+startup: application
+init: false
+services:
+  - mqtt:need
+map:
+  - type: ssl
+    read_only: true
+options:
+  unifi_host: "https://192.168.1.1"
+  unifi_username: ""
+  unifi_password: ""
+  unifi_verify_ssl: false
+  unifi_mqtt_port: 12812
+  mqtt_host: ""
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_base_topic: "home/unifi-access"
+  controller_id: ""
+  viewer_id: ""
+  source_reader: ""
+  wake_topic: "home/unifi-access/viewer/wake"
+  wake_value: "true"
+  wake_field: ""
+  ca_path: "/ssl/unifi-access-mqtt/ca-cert.pem"
+  client_cert_path: "/ssl/unifi-access-mqtt/mqtt-client-cert.pem"
+  client_key_path: "/ssl/unifi-access-mqtt/mqtt-client-priv.pem"
+  log_level: "info"
+schema:
+  unifi_host: url
+  unifi_username: str
+  unifi_password: password
+  unifi_verify_ssl: bool
+  unifi_mqtt_port: port
+  mqtt_host: str?
+  mqtt_port: port
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_base_topic: str
+  controller_id: str
+  viewer_id: str
+  source_reader: str
+  wake_topic: str
+  wake_value: str
+  wake_field: str?
+  ca_path: str
+  client_cert_path: str
+  client_key_path: str
+  log_level: list(trace|debug|info|warn|error)
