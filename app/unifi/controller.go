@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/philipparndt/go-logger"
 )
@@ -176,21 +177,35 @@ func (c *Controller) TriggerDoorbellRing(door *Door) error {
 
 // DismissDoorbellCall dismisses an active doorbell call
 func (c *Controller) DismissDoorbellCall(door *Door) error {
-	if door.DoorbellRequestID == "" {
+	// The command may arrive just before the controller's remote_view event.
+	// Give the event stream a short window to provide the request ID instead
+	// of permanently dropping the dismiss request.
+	deadline := time.Now().Add(3 * time.Second)
+	var requestID, deviceID string
+	for {
+		c.mu.RLock()
+		requestID = door.DoorbellRequestID
+		deviceID = door.DoorbellDeviceID
+		c.mu.RUnlock()
+		if requestID != "" || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if requestID == "" {
 		return fmt.Errorf("no active doorbell call for door %s", door.Name)
 	}
 
 	// Use the doorbell device ID if available, otherwise fall back to door ID
-	deviceID := door.DoorbellDeviceID
 	if deviceID == "" {
 		deviceID = door.ID
 	}
 
-	logger.Info("Dismissing doorbell call", "door", door.Name, "request", door.DoorbellRequestID, "device", deviceID)
+	logger.Info("Dismissing doorbell call", "door", door.Name, "request", requestID, "device", deviceID)
 	if c.OnDoorbellDismiss != nil {
 		c.OnDoorbellDismiss(door)
 	}
-	err := c.client.DismissDoorbellCall(deviceID, door.DoorbellRequestID, c.client.GetUserID(), c.client.GetUserName())
+	err := c.client.DismissDoorbellCall(deviceID, requestID, c.client.GetUserID(), c.client.GetUserName())
 	if err != nil {
 		return err
 	}
@@ -523,11 +538,32 @@ func (c *Controller) setupEventHandlers() {
 func (c *Controller) handleDoorbellRing(event EventPacket) {
 	data := ParseDoorbellRingData(event)
 	if data == nil {
+		logger.Warn("Doorbell ring event did not contain a request ID")
 		return
 	}
 
 	c.mu.Lock()
 	door := c.doors[data.ConnectedUAHID]
+	if door == nil {
+		for _, candidate := range c.doors {
+			if data.DeviceID != "" && candidate.ReaderDeviceID == data.DeviceID {
+				door = candidate
+				break
+			}
+		}
+	}
+	if door == nil && c.doorbellConfig != nil &&
+		(data.DeviceID == "" || c.doorbellConfig.resolvedReader == data.DeviceID || c.doorbellConfig.SourceReader == data.DeviceID) {
+		for _, candidate := range c.doors {
+			door = candidate
+			break
+		}
+	}
+	if door == nil && len(c.doors) == 1 {
+		for _, candidate := range c.doors {
+			door = candidate
+		}
+	}
 	if door != nil {
 		door.DoorbellRinging = true
 		door.DoorbellRequestID = data.RequestID
@@ -542,6 +578,9 @@ func (c *Controller) handleDoorbellRing(event EventPacket) {
 		if c.OnDoorbellRing != nil {
 			c.OnDoorbellRing(door)
 		}
+	} else {
+		logger.Warn("Doorbell ring could not be matched to a door",
+			"request_id", data.RequestID, "device", data.DeviceID, "connected_uah_id", data.ConnectedUAHID)
 	}
 }
 

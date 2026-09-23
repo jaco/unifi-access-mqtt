@@ -1,5 +1,5 @@
 name: "UniFi Access MQTT"
-version: "0.1.1"
+version: "0.1.2"
 slug: "unifi_access_mqtt"
 description: "Bridge UniFi Access to Home Assistant MQTT and wake Intercom Viewers"
 url: "https://github.com/jaco/unifi-access-mqtt"
