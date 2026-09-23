@@ -140,8 +140,12 @@ func (e *EventPacket) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(aux.Data, &e.Data); err == nil {
 		return nil
 	}
-	// Fall back to string form; ignore other shapes silently.
-	_ = json.Unmarshal(aux.Data, &e.DataString)
+	// Some Access releases wrap the event data as a JSON-encoded string.
+	// Preserve plain strings, but decode object-shaped strings so doorbell
+	// request IDs are still available to the dismiss path.
+	if err := json.Unmarshal(aux.Data, &e.DataString); err == nil && e.DataString != "" {
+		_ = json.Unmarshal([]byte(e.DataString), &e.Data)
+	}
 	return nil
 }
 
