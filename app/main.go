@@ -110,6 +110,9 @@ func main() {
 		waker.OnWake = func(viewerID string) {
 			metricsStore.RecordViewerWake(viewerID)
 		}
+		waker.OnRemoteView = func(requestID, sourceReader string) {
+			controller.TrackDoorbellCall(requestID, sourceReader)
+		}
 		if err := waker.Connect(); err != nil {
 			logger.Error("Failed to connect viewer waker", "err", err)
 		} else {
