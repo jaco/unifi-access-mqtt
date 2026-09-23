@@ -4,6 +4,8 @@ FROM golang:1.25-alpine AS builder
 
 ARG BUILD_VERSION
 
+# Keep this layer tied to the add-on source revision so forced rebuilds do not
+# reuse a stale git-clone layer after a tag is republished during development.
 RUN apk add --no-cache git
 RUN git clone --depth 1 --branch "addon-v${BUILD_VERSION}" \
     https://github.com/jaco/unifi-access-mqtt.git /src
