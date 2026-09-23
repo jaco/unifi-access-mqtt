@@ -212,6 +212,55 @@ func (c *Controller) DismissDoorbellCall(door *Door) error {
 	return nil
 }
 
+// TrackDoorbellCall records a physical Viewer call observed on UniFi's
+// internal MQTT broker. Some Access versions do not emit the corresponding
+// access.remote_view WebSocket event, so without this fallback there is no
+// request ID available for reply_remote.
+func (c *Controller) TrackDoorbellCall(requestID, sourceReader string) {
+	if requestID == "" {
+		return
+	}
+
+	c.mu.Lock()
+	var matchedDoor *Door
+	for _, door := range c.doors {
+		if sourceReader != "" && door.ReaderDeviceID == sourceReader {
+			matchedDoor = door
+			break
+		}
+	}
+	if matchedDoor == nil && c.doorbellConfig != nil &&
+		(sourceReader == "" || c.doorbellConfig.resolvedReader == sourceReader || c.doorbellConfig.SourceReader == sourceReader) {
+		for _, door := range c.doors {
+			matchedDoor = door
+			break
+		}
+	}
+	if matchedDoor == nil && len(c.doors) == 1 {
+		for _, door := range c.doors {
+			matchedDoor = door
+		}
+	}
+	if matchedDoor != nil {
+		matchedDoor.DoorbellRinging = true
+		matchedDoor.DoorbellRequestID = requestID
+		matchedDoor.DoorbellDeviceID = sourceReader
+	}
+	c.mu.Unlock()
+
+	if matchedDoor == nil {
+		logger.Warn("Observed remote_view call could not be matched to a door",
+			"request_id", requestID, "source_reader", sourceReader)
+		return
+	}
+
+	logger.Info("Tracked doorbell call from Viewer MQTT",
+		"door", matchedDoor.Name, "request_id", requestID, "device", sourceReader)
+	if c.OnDoorbellRing != nil {
+		c.OnDoorbellRing(matchedDoor)
+	}
+}
+
 // bootstrap retrieves initial device configuration
 func (c *Controller) bootstrap() error {
 	bootstrap, err := c.client.Bootstrap()
@@ -351,10 +400,10 @@ func (c *Controller) resolveDoorbellConfig(bootstrap *BootstrapResponse) {
 	for _, device := range bootstrap.Devices {
 		id := device.GetID()
 		if id != "" {
-			deviceMap[id] = id                               // device ID -> device ID
-			deviceMap[strings.ToLower(device.MAC)] = id      // MAC (lowercase) -> device ID
-			deviceMap[strings.ToUpper(device.MAC)] = id      // MAC (uppercase) -> device ID
-			deviceMap[NormalizeMAC(device.MAC)] = id         // Normalized MAC -> device ID
+			deviceMap[id] = id                          // device ID -> device ID
+			deviceMap[strings.ToLower(device.MAC)] = id // MAC (lowercase) -> device ID
+			deviceMap[strings.ToUpper(device.MAC)] = id // MAC (uppercase) -> device ID
+			deviceMap[NormalizeMAC(device.MAC)] = id    // Normalized MAC -> device ID
 		}
 	}
 	for _, viewer := range bootstrap.Viewers {
